@@ -33,14 +33,19 @@ CSLClient::~CSLClient() {
         delete context;
 }
 
-void CSLClient::read_sync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
+void CSLClient::ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
     infinity::requests::RequestToken request_token(context);
     qp->read(buffer_1side, local_off, remote_buffer_token, remote_off, size, &request_token);
     request_token.waitUntilCompleted();
 }
 
-void CSLClient::write_sync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
+void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
     infinity::requests::RequestToken request_token(context);
     qp->write(buffer_1side, local_off, remote_buffer_token, remote_off, size, &request_token);
     request_token.waitUntilCompleted();
+}
+
+void CSLClient::Append(void *buf, uint32_t size) {
+    memcpy(mem, buf, size);
+    WriteSync(0, 0, size);
 }

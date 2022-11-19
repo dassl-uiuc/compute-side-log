@@ -27,4 +27,6 @@ class CSLServer {
    public:
     CSLServer(uint16_t port, size_t buf_size);
     ~CSLServer();
+
+    void *GetBufData() { return buffer->getData(); }
 };

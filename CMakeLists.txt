@@ -14,7 +14,7 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(googletest)
 
-find_package(glog 0.7.0 REQUIRED)
+find_package(glog)
 
 add_subdirectory(src)
 add_subdirectory(tst)

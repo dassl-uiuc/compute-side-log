@@ -13,8 +13,8 @@ add_executable(client client.cpp)
 include_directories(${CMAKE_SOURCE_DIR}/RDMA/release/include)
 
 target_link_libraries(csl
-    ${CMAKE_SOURCE_DIR}/RDMA/release/libinfinity.so
-    ibverbs
+    PRIVATE ${CMAKE_SOURCE_DIR}/RDMA/release/libinfinity.a
+    PRIVATE ibverbs
     glog::glog)
 
 target_link_libraries(server csl)

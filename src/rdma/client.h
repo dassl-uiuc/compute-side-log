@@ -30,6 +30,8 @@ class CSLClient {
     CSLClient(const char *hostAddress, uint16_t port, size_t buf_size);
     ~CSLClient();
 
-    void write_sync(uint64_t local_off, uint64_t remote_off, uint32_t size);
-    void read_sync(uint64_t local_off, uint64_t remote_off, uint32_t size);
+    void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
+    void ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
+
+    void Append(void *buf, uint32_t size);
 };
