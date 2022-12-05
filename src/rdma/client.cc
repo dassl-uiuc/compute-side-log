@@ -8,18 +8,20 @@
 
 #include <glog/logging.h>
 #include <stdlib.h>
+
 #include <memory>
 
-CSLClient::CSLClient(vector<const char *> hostAddresses, uint16_t port, size_t buf_size) : buf_offset(0) {
+CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id)
+    : peers(host_addresses), buf_size(buf_size), buf_offset(0), in_use(false), id(id) {
     context = new infinity::core::Context(0, 1);
     qp_factory = new infinity::queues::QueuePairFactory(context);
 
     LOG(INFO) << "Connecting to remote node" << endl;
-    for (const char *addr : hostAddresses) {
+    for (auto &addr : host_addresses) {
         RemoteConData prop;
-        prop.qp = qp_factory->connectToRemoteHost(addr, port);
+        prop.qp = qp_factory->connectToRemoteHost(addr.c_str(), port);
         prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
-        remote_props.push_back(prop);
+        remote_props[addr] = prop;
     }
 
     LOG(INFO) << "Creating buffers";
@@ -31,23 +33,26 @@ CSLClient::CSLClient(vector<const char *> hostAddresses, uint16_t port, size_t b
 
 CSLClient::~CSLClient() {
     if (buffer) delete buffer;
+    for (auto &p : remote_props) {
+        if (p.second.qp) delete p.second.qp;
+    }
     if (qp_factory) delete qp_factory;
     if (context) delete context;
 }
 
 void CSLClient::ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
     infinity::requests::RequestToken request_token(context);
-    RemoteConData &prop = remote_props[0];
+    RemoteConData &prop = remote_props.begin()->second;
     prop.qp->read(buffer, local_off, prop.remote_buffer_token, remote_off, size, &request_token);
     request_token.waitUntilCompleted();
 }
 
 void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
     vector<shared_ptr<infinity::requests::RequestToken> > request_tokens;
-    for (auto &prop : remote_props) {
+    for (auto &p : remote_props) {
         auto token = make_shared<infinity::requests::RequestToken>(context);
         request_tokens.emplace_back(token);
-        prop.qp->write(buffer, local_off, prop.remote_buffer_token, remote_off, size, token.get());
+        p.second.qp->write(buffer, local_off, p.second.remote_buffer_token, remote_off, size, token.get());
     }
 
     for (auto token : request_tokens) {
@@ -55,8 +60,14 @@ void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size
     }
 }
 
-void CSLClient::Append(void *buf, uint32_t size) {
+void CSLClient::Append(const void *buf, uint32_t size) {
     size_t cur_off = buf_offset.fetch_add(size);
     memcpy((char *)mem + cur_off, buf, size);
     WriteSync(cur_off, cur_off, size);
+}
+
+void CSLClient::Reset() {
+    memset(mem, 0, buf_size);
+    buf_offset.store(0);
+    SetInUse(false);
 }

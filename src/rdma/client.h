@@ -14,6 +14,9 @@
 #include <infinity/queues/QueuePair.h>
 #include <infinity/queues/QueuePairFactory.h>
 
+#include <set>
+#include <unordered_map>
+
 using namespace std;
 
 class CSLClient {
@@ -21,22 +24,32 @@ class CSLClient {
         infinity::queues::QueuePair *qp;
         infinity::memory::RegionToken *remote_buffer_token;
     };
+
    private:
     infinity::core::Context *context;
     infinity::queues::QueuePairFactory *qp_factory;
-    vector<CSLClient::RemoteConData> remote_props;
+    unordered_map<string, RemoteConData> remote_props;
+    set<string> peers;
     infinity::memory::Buffer *buffer;
 
-    void* mem;
+    void *mem;
+    size_t buf_size;
     atomic<size_t> buf_offset;
+    bool in_use;
+    uint32_t id;
 
    public:
-    CSLClient(vector<const char *>hostAddresses, uint16_t port, size_t buf_size);
+    CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id = 0);
     ~CSLClient();
 
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
     void ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
 
-    void Append(void *buf, uint32_t size);
+    void Append(const void *buf, uint32_t size);
     void *GetBufData() { return buffer->getData(); }
+    void Reset();
+    const set<string> &GetPeers() { return peers; }
+    size_t GetBufSize() { return buf_size; }
+    void SetInUse(bool is_inuse) { in_use = is_inuse; }
+    uint32_t GetId() { return id; }
 };

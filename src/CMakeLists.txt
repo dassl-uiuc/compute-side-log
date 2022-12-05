@@ -1,5 +1,6 @@
 set(SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/csl.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/client_pool.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/rdma/client.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/rdma/server.cc)
 

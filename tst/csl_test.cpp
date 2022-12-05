@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <thread>
+#include <memory>
 
 #include "../src/rdma/client.h"
 #include "../src/rdma/server.h"
@@ -10,7 +11,8 @@ const uint16_t PORT = 8011;
 class CSLTest : public ::testing::Test {
    protected:
     void SetUp() override {
-        svr_th = std::thread([&]() { server = new CSLServer(PORT, 1024); });
+        server = new CSLServer(PORT, 1024);
+        svr_th = std::thread([&]() { server->Run(); });
     }
 
     void TearDown() override {

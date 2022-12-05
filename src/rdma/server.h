@@ -17,16 +17,24 @@
 using namespace std;
 
 class CSLServer {
+    struct LocalConData {
+        infinity::queues::QueuePair *qp;
+        infinity::memory::Buffer *buffer;
+        infinity::memory::RegionToken *buffer_token;
+    };
+
    private:
     infinity::core::Context *context;
     infinity::queues::QueuePairFactory *qp_factory;
-    infinity::queues::QueuePair *qp;
-    infinity::memory::Buffer *buffer;
-    infinity::memory::RegionToken *buffer_token;
+    vector<LocalConData> local_props;
+
+    size_t buf_size;
 
    public:
     CSLServer(uint16_t port, size_t buf_size);
     ~CSLServer();
 
-    void *GetBufData() { return buffer->getData(); }
+    void Run();
+
+    void *GetBufData(int index = 0) { return local_props[index].buffer->getData(); }
 };
