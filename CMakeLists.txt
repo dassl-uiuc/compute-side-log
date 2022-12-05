@@ -16,5 +16,7 @@ FetchContent_MakeAvailable(googletest)
 
 find_package(glog)
 
+set(CMAKE_CXX_FLAGS -pg)
+
 add_subdirectory(src)
 add_subdirectory(tst)
