@@ -1,5 +1,5 @@
 add_executable(csl_test
-    csl_test.cpp)
+    client_pool_test.cpp)
 
 target_include_directories(csl_test
     PRIVATE ${CMAKE_SOURCE_DIR}/RDMA/release/include)

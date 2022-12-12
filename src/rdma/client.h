@@ -25,7 +25,7 @@ class CSLClient {
         infinity::memory::RegionToken *remote_buffer_token;
     };
 
-   private:
+   protected:
     infinity::core::Context *context;
     infinity::queues::QueuePairFactory *qp_factory;
     unordered_map<string, RemoteConData> remote_props;
@@ -39,6 +39,7 @@ class CSLClient {
     uint32_t id;
 
    public:
+    CSLClient() = default;
     CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id = 0);
     ~CSLClient();
 
@@ -47,7 +48,7 @@ class CSLClient {
 
     void Append(const void *buf, uint32_t size);
     void *GetBufData() { return buffer->getData(); }
-    void Reset();
+    virtual void Reset();
     const set<string> &GetPeers() { return peers; }
     size_t GetBufSize() { return buf_size; }
     void SetInUse(bool is_inuse) { in_use = is_inuse; }
