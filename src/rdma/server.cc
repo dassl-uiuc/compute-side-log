@@ -9,7 +9,7 @@
 
 #include <glog/logging.h>
 
-CSLServer::CSLServer(uint16_t port, size_t buf_size) : buf_size(buf_size) {
+CSLServer::CSLServer(uint16_t port, size_t buf_size) : buf_size(buf_size), conn_cnt(0) {
     context = new infinity::core::Context(0, 1);
     qp_factory = new infinity::queues::QueuePairFactory(context);
 
@@ -22,10 +22,15 @@ void CSLServer::Run() {
     while (true) {
         local_props.emplace_back();
         LocalConData &prop = local_props.back();
+        
         LOG(INFO) << "Creating buffers to read from and write to" << endl;
         prop.buffer = new infinity::memory::Buffer(context, buf_size);
+        memset(prop.buffer->getData(), 0, prop.buffer->getSizeInBytes());
         prop.buffer_token = prop.buffer->createRegionToken();
+        
+        LOG(INFO) << "Waiting for connection from new client...";
         prop.qp = qp_factory->acceptIncomingConnection(prop.buffer_token, sizeof(*(prop.buffer_token)));
+        conn_cnt++;
     }
 }
 

@@ -29,12 +29,13 @@ class CSLServer {
     vector<LocalConData> local_props;
 
     size_t buf_size;
+    int conn_cnt;
 
    public:
     CSLServer(uint16_t port, size_t buf_size);
     ~CSLServer();
 
     void Run();
-
+    int GetConnectionCount() { return conn_cnt; }
     void *GetBufData(int index = 0) { return local_props[index].buffer->getData(); }
 };

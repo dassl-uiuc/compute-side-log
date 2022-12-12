@@ -16,7 +16,8 @@ include_directories(${CMAKE_SOURCE_DIR}/RDMA/release/include)
 target_link_libraries(csl
     PRIVATE ${CMAKE_SOURCE_DIR}/RDMA/release/libinfinity.a
     PRIVATE ibverbs
-    glog::glog)
+    glog::glog
+    PUBLIC Threads::Threads)
 
 target_link_libraries(server csl)
 

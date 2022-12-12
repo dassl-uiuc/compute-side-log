@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <unordered_map>
+#include <mutex>
 
 #define DEBUG
 
@@ -35,7 +36,8 @@ static original_openat_t original_openat = reinterpret_cast<original_openat_t>(d
 static original_write_t original_write = reinterpret_cast<original_write_t>(dlsym(RTLD_NEXT, "write"));
 static original_close_t original_close = reinterpret_cast<original_close_t>(dlsym(RTLD_NEXT, "close"));
 
-static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;  // TODO: make it thread safe
+static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
+static std::mutex csl_lock;
 static CSLClientPool pool;
 
 int open(const char *pathname, int flags, ...) {
@@ -54,6 +56,7 @@ int open(const char *pathname, int flags, ...) {
     }
 
     if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
+        std::lock_guard<std::mutex> lock(csl_lock);
         csl_fd_cli.insert(make_pair(fd, pool.GetClient(HOST_ADDRS, PORT, MR_SIZE)));
     }
 
@@ -86,6 +89,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
     }
 
     if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
+        std::lock_guard<std::mutex> lock(csl_lock);
         csl_fd_cli.insert(make_pair(fd, pool.GetClient(HOST_ADDRS, PORT, MR_SIZE)));
     }
 
@@ -96,18 +100,27 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
 }
 
 ssize_t write(int fd, const void *buf, size_t count) {
+    csl_lock.lock();
     auto it = csl_fd_cli.find(fd);
     if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
 #ifdef DEBUG
         printf("compute side log, fd: %d", fd);
 #endif
-        it->second->Append(buf, count);
+        cli->Append(buf, count);
+    } else {
+        csl_lock.unlock();
     }
     return original_write(fd, buf, count);
 }
 
 int close(int fd) {
-    pool.RecycleClient(csl_fd_cli[fd]->GetId());
-    csl_fd_cli.erase(fd);
+    std::lock_guard<std::mutex> lock(csl_lock);
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        pool.RecycleClient(csl_fd_cli[fd]->GetId());
+        csl_fd_cli.erase(fd);
+    }
     return original_close(fd);
 }

@@ -15,6 +15,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(googletest)
 
 find_package(glog)
+find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_FLAGS -pg)
 
