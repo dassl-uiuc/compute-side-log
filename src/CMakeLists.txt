@@ -10,7 +10,7 @@ add_library(csl SHARED
 
 add_executable(server server.cpp)
 add_executable(client client.cpp)
-add_executable(posix_client posix_client.c)
+add_executable(posix_client posix_client.cpp)
 
 include_directories(${CMAKE_SOURCE_DIR}/RDMA/release/include)
 

@@ -23,7 +23,7 @@
 #include "client_pool.h"
 #include "csl_config.h"
 
-#define DEBUG
+// #define CSL_DEBUG
 
 using original_open_t = int (*)(const char *, int, ...);
 using original_creat_t = int (*)(const char *, mode_t);
@@ -64,14 +64,14 @@ int open(const char *pathname, int flags, ...) {
         }
     }
 
-#ifdef DEBUG
+#ifdef CSL_DEBUG
     printf("open path %s, flag 0x%x, mode 0%o\n", pathname, flags, mode);
 #endif
     return fd;
 }
 
 int creat(const char *pathname, mode_t mode) {
-#ifdef DEBUG
+#ifdef CSL_DEBUG
     printf("creat path %s, mode 0%o\n", pathname, mode);
 #endif
     return original_creat(pathname, mode);
@@ -100,7 +100,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
         }
     }
 
-#ifdef DEBUG
+#ifdef CSL_DEBUG
     printf("openat dir %d path %s, flag 0x%x, mode 0%o\n", dirfd, pathname, flags, mode);
 #endif
     return fd;
@@ -112,8 +112,8 @@ ssize_t write(int fd, const void *buf, size_t count) {
     if (it != csl_fd_cli.end()) {
         auto cli = it->second;
         csl_lock.unlock();
-#ifdef DEBUG
-        printf("compute side log, fd: %d", fd);
+#ifdef CSL_DEBUG
+        printf("compute side log, fd: %d\n", fd);
 #endif
         cli->Append(buf, count);
     } else {

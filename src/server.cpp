@@ -1,4 +1,5 @@
 #include "rdma/server.h"
+#include "csl_config.h"
 
 #include <unistd.h>
 #include <thread>
@@ -6,10 +7,8 @@
 
 using namespace std;
 
-const uint16_t PORT = 8011;
-
 int main() {
-    CSLServer server(PORT, 1024);
+    CSLServer server(PORT, MR_SIZE);
 
     thread svr_th = thread([&]() {
         server.Run();
