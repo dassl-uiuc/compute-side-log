@@ -1,6 +1,6 @@
 /*
  * glic file operation stubs for compute-side log
- * 
+ *
  * Copyright 2022 UIUC
  * Author: Xuhao Luo
  */
@@ -10,8 +10,6 @@
 #endif
 
 #include "csl.h"
-#include "csl_config.h"
-#include "client_pool.h"
 
 #include <dlfcn.h>
 #include <fcntl.h>
@@ -19,8 +17,11 @@
 #include <stdio.h>
 #include <unistd.h>
 
-#include <unordered_map>
 #include <mutex>
+#include <unordered_map>
+
+#include "client_pool.h"
+#include "csl_config.h"
 
 #define DEBUG
 
@@ -56,8 +57,11 @@ int open(const char *pathname, int flags, ...) {
     }
 
     if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
-        std::lock_guard<std::mutex> lock(csl_lock);
-        csl_fd_cli.insert(make_pair(fd, pool.GetClient(HOST_ADDRS, PORT, MR_SIZE)));
+        auto csl_client = pool.GetClient(HOST_ADDRS, PORT, MR_SIZE);
+        {
+            std::lock_guard<std::mutex> lock(csl_lock);
+            csl_fd_cli.insert(make_pair(fd, csl_client));
+        }
     }
 
 #ifdef DEBUG
@@ -89,8 +93,11 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
     }
 
     if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
-        std::lock_guard<std::mutex> lock(csl_lock);
-        csl_fd_cli.insert(make_pair(fd, pool.GetClient(HOST_ADDRS, PORT, MR_SIZE)));
+        auto csl_client = pool.GetClient(HOST_ADDRS, PORT, MR_SIZE);
+        {
+            std::lock_guard<std::mutex> lock(csl_lock);
+            csl_fd_cli.insert(make_pair(fd, csl_client));
+        }
     }
 
 #ifdef DEBUG
