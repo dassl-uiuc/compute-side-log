@@ -1,18 +1,24 @@
+#include <error.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <chrono>
+#include <iostream>
+#include <string>
+
 #include "csl.h"
 #include "csl_config.h"
-#include <unistd.h>
-#include <fcntl.h>
-#include <string.h>
-#include <stdlib.h>
-#include <error.h>
-#include <iostream>
-#include <chrono>
 
-const size_t MSG_SIZE = 154;
+size_t MSG_SIZE = 154;
 
-int main() {
+int main(int argc, char *argv[]) {
     int i = 0;
-    int fd = open("test.txt", O_WRONLY|O_CREAT|O_TRUNC|O_CLOEXEC|O_CSL, 0644);
+    if (argc > 1) {
+        MSG_SIZE = std::stoi(argv[1]);
+    }
+    int fd = open("test.txt", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_CSL, 0644);
     if (fd < 0) {
         std::cerr << "open file failed: " << errno << std::endl;
     }
@@ -26,7 +32,7 @@ int main() {
     auto end = std::chrono::high_resolution_clock::now();
 
     auto elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    std::cout << "total: " << elapse << "us, average: " << static_cast<double>(elapse)/i << "us" << std::endl;
+    std::cout << "total: " << elapse << "us, average: " << static_cast<double>(elapse) / i << "us" << std::endl;
 
     delete buf;
     close(fd);

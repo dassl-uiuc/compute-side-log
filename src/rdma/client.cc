@@ -16,10 +16,11 @@ CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size,
     context = new infinity::core::Context(0, 1);
     qp_factory = new infinity::queues::QueuePairFactory(context);
 
-    LOG(INFO) << "Connecting to remote node" << endl;
     for (auto &addr : host_addresses) {
+        LOG(INFO) << "Connecting to " << addr;
         RemoteConData prop;
         prop.qp = qp_factory->connectToRemoteHost(addr.c_str(), port);
+        LOG(INFO) << addr << " connected";
         prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
         remote_props[addr] = prop;
     }
