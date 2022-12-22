@@ -27,9 +27,10 @@ CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size,
 
     LOG(INFO) << "Creating buffers";
     if (posix_memalign(&(mem), infinity::core::Configuration::PAGE_SIZE, buf_size)) {
-        LOG(FATAL) << "[INFINITY][MEMORY][BUFFER] Cannot allocate and align buffer.";
+        LOG(FATAL) << "Cannot allocate and align buffer.";
     }
     buffer = new infinity::memory::Buffer(context, mem, buf_size);
+    LOG(INFO) << "csl client " << id << " created, buffer size " << buf_size;
 }
 
 CSLClient::~CSLClient() {
@@ -69,6 +70,8 @@ void CSLClient::Append(const void *buf, uint32_t size) {
 
 void CSLClient::Reset() {
     memset(mem, 0, buf_size);
+    double usage = buf_offset.load() / 1024.0 / 1024.0;
     buf_offset.store(0);
     SetInUse(false);
+    LOG(INFO) << "csl client " << id << "recycled, MR usage: " << usage << "MB";
 }

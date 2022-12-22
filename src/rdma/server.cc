@@ -31,6 +31,7 @@ void CSLServer::Run() {
         LOG(INFO) << "Waiting for connection from new client...";
         prop.qp = qp_factory->acceptIncomingConnection(prop.buffer_token, sizeof(*(prop.buffer_token)));
         conn_cnt++;
+        LOG(INFO) << "Connection accepted, total: " << conn_cnt;
     }
 }
 
