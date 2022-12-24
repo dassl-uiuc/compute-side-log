@@ -5,14 +5,51 @@
  * Author: Xuhao Luo
  */
 #include "client.h"
+#include "../csl_config.h"
 
 #include <glog/logging.h>
 #include <stdlib.h>
+#include <errno.h>
+#include <sstream>
 
 #include <memory>
 
 CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id)
-    : peers(host_addresses), buf_size(buf_size), buf_offset(0), in_use(false), id(id) {
+    : peers(host_addresses), buf_size(buf_size), buf_offset(0), in_use(false), id(id), zh(nullptr) {
+    init(host_addresses, port);
+}
+
+CSLClient::CSLClient(uint16_t mgr_port, string mgr_address, size_t buf_size, uint32_t id)
+    : buf_size(buf_size), buf_offset(0), in_use(false), id(id), zh(nullptr) {
+    int ret;
+    zh = zookeeper_init((mgr_address + ":" + to_string(mgr_port)).c_str(), nullptr, 10000, 0, 0, 0);
+    if (!zh) {
+        LOG(ERROR) << "Failed to init zookeeper handler, errno: " << errno;
+        return;
+    }
+
+    struct String_vector peerv;
+    ret = zoo_get_children(zh, ZK_ROOT_PATH.c_str(), 0, &peerv);
+    if (ret) {
+        LOG(ERROR) << "Failed to get servers, errno: " << ret;
+        return;
+    } else if (peerv.count <= 0) {
+        LOG(ERROR) << "No server found";
+        return;
+    }
+
+    stringstream peers;
+    set<string> host_addresses;
+    for (int i = 0; i < peerv.count; i++) {
+        host_addresses.insert(peerv.data[i]);
+        peers << " " << peerv.data[i];
+    }
+    LOG(INFO) << "Found " << peerv.count << " servers:" << peers.str();
+
+    init(host_addresses, PORT);
+}
+
+void CSLClient::init(set<string> host_addresses, uint16_t port) {
     context = new infinity::core::Context(0, 1);
     qp_factory = new infinity::queues::QueuePairFactory(context);
 
@@ -34,6 +71,7 @@ CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size,
 }
 
 CSLClient::~CSLClient() {
+    if (zh)
     if (buffer) delete buffer;
     for (auto &p : remote_props) {
         if (p.second.qp) delete p.second.qp;

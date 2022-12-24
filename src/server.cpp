@@ -8,7 +8,7 @@
 using namespace std;
 
 int main() {
-    CSLServer server(PORT, MR_SIZE);
+    CSLServer server(PORT, MR_SIZE, "localhost");
 
     thread svr_th = thread([&]() {
         server.Run();

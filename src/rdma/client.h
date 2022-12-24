@@ -7,12 +7,17 @@
 
 #pragma once
 
+#ifndef THREADED
+#define THREADED
+#endif
+
 #include <infinity/core/Configuration.h>
 #include <infinity/core/Context.h>
 #include <infinity/memory/Buffer.h>
 #include <infinity/memory/RegionToken.h>
 #include <infinity/queues/QueuePair.h>
 #include <infinity/queues/QueuePairFactory.h>
+#include <zookeeper/zookeeper.h>
 
 #include <set>
 #include <unordered_map>
@@ -38,9 +43,12 @@ class CSLClient {
     bool in_use;
     uint32_t id;
 
+    zhandle_t *zh;
+
    public:
     CSLClient() = default;
     CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id = 0);
+    CSLClient(uint16_t mgr_port, string mgr_address, size_t buf_size, uint32_t id=0);
     ~CSLClient();
 
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
@@ -53,4 +61,7 @@ class CSLClient {
     size_t GetBufSize() { return buf_size; }
     void SetInUse(bool is_inuse) { in_use = is_inuse; }
     uint32_t GetId() { return id; }
+
+   private:
+    void init(set<string> host_addresses, uint16_t port);
 };

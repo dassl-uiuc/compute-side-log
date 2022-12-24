@@ -14,10 +14,13 @@ add_executable(posix_client posix_client.cpp)
 
 include_directories(${CMAKE_SOURCE_DIR}/RDMA/release/include)
 
+target_compile_definitions(server PUBLIC -DTHREADED)
+
 target_link_libraries(csl
     PRIVATE ${CMAKE_SOURCE_DIR}/RDMA/release/libinfinity.a
     PRIVATE ibverbs
-    glog::glog
+    PRIVATE zookeeper_mt
+    PUBLIC glog::glog
     PUBLIC Threads::Threads)
 
 target_link_libraries(server csl)

@@ -1,3 +1,6 @@
 [submodule "RDMA"]
 	path = RDMA
 	url = git@github.com:dassl-uiuc/RDMA.git
+[submodule "zookeeper"]
+	path = zookeeper
+	url = git@github.com:apache/zookeeper.git
