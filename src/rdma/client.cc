@@ -5,24 +5,26 @@
  * Author: Xuhao Luo
  */
 #include "client.h"
-#include "../csl_config.h"
 
+#include <errno.h>
 #include <glog/logging.h>
 #include <stdlib.h>
-#include <errno.h>
-#include <sstream>
 
 #include <memory>
+#include <sstream>
+
+#include "../csl_config.h"
+#include "../util.h"
 
 CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id)
-    : peers(host_addresses), buf_size(buf_size), buf_offset(0), in_use(false), id(id), zh(nullptr) {
+    : buf_size(buf_size), buf_offset(0), in_use(false), id(id), zh(nullptr) {
     init(host_addresses, port);
 }
 
 CSLClient::CSLClient(uint16_t mgr_port, string mgr_address, size_t buf_size, uint32_t id)
     : buf_size(buf_size), buf_offset(0), in_use(false), id(id), zh(nullptr) {
     int ret;
-    zh = zookeeper_init((mgr_address + ":" + to_string(mgr_port)).c_str(), nullptr, 10000, 0, 0, 0);
+    zh = zookeeper_init((mgr_address + ":" + to_string(mgr_port)).c_str(), ClientWatcher, 10000, 0, this, 0);
     if (!zh) {
         LOG(ERROR) << "Failed to init zookeeper handler, errno: " << errno;
         return;
@@ -38,15 +40,24 @@ CSLClient::CSLClient(uint16_t mgr_port, string mgr_address, size_t buf_size, uin
         return;
     }
 
-    stringstream peers;
+    stringstream peerss;
     set<string> host_addresses;
     for (int i = 0; i < peerv.count; i++) {
         host_addresses.insert(peerv.data[i]);
-        peers << " " << peerv.data[i];
+        peerss << " " << peerv.data[i];
     }
-    LOG(INFO) << "Found " << peerv.count << " servers:" << peers.str();
+    LOG(INFO) << "Found " << peerv.count << " servers:" << peerss.str();
 
     init(host_addresses, PORT);
+
+    for (auto &p : peers) {
+        string peer_path = ZK_ROOT_PATH + "/" + p;
+        struct Stat stat;
+        ret = zoo_wexists(zh, peer_path.c_str(), ClientWatcher, this, &stat);
+        if (ret) {
+            LOG(ERROR) << "Error set watcher on node " << peer_path << " errno:" << ret;
+        }
+    }
 }
 
 void CSLClient::init(set<string> host_addresses, uint16_t port) {
@@ -54,12 +65,7 @@ void CSLClient::init(set<string> host_addresses, uint16_t port) {
     qp_factory = new infinity::queues::QueuePairFactory(context);
 
     for (auto &addr : host_addresses) {
-        LOG(INFO) << "Connecting to " << addr;
-        RemoteConData prop;
-        prop.qp = qp_factory->connectToRemoteHost(addr.c_str(), port);
-        LOG(INFO) << addr << " connected";
-        prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
-        remote_props[addr] = prop;
+        AddPeer(addr, port);
     }
 
     LOG(INFO) << "Creating buffers";
@@ -72,7 +78,7 @@ void CSLClient::init(set<string> host_addresses, uint16_t port) {
 
 CSLClient::~CSLClient() {
     if (zh)
-    if (buffer) delete buffer;
+        if (buffer) delete buffer;
     for (auto &p : remote_props) {
         if (p.second.qp) delete p.second.qp;
     }
@@ -112,4 +118,52 @@ void CSLClient::Reset() {
     buf_offset.store(0);
     SetInUse(false);
     LOG(INFO) << "csl client " << id << "recycled, MR usage: " << usage << "MB";
+}
+
+bool CSLClient::AddPeer(const string &host_addr, uint16_t port) {
+    if (peers.find(host_addr) != peers.end()) {
+        LOG(ERROR) << "Peer " << host_addr << " already connected.";
+        return false;
+    }
+
+    LOG(INFO) << "Connecting to " << host_addr;
+    RemoteConData prop;
+    prop.qp = qp_factory->connectToRemoteHost(host_addr.c_str(), port);
+    LOG(INFO) << host_addr << " connected";
+    prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
+    remote_props[host_addr] = prop;
+    peers.insert(host_addr);
+
+    return true;
+}
+
+bool CSLClient::RemovePeer(string host_addr) {
+    auto it = remote_props.find(host_addr);
+    if (it == remote_props.end()) {
+        LOG(ERROR) << "Peer " << host_addr << " not connected.";
+        return false;
+    }
+
+    delete it->second.qp;
+    remote_props.erase(it);
+    peers.erase(host_addr);
+    LOG(INFO) << "Client " << id << " removes peer " << host_addr;
+    return true;
+}
+
+void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx) {
+    CSLClient *cli = reinterpret_cast<CSLClient *>(watcher_ctx);
+    LOG(INFO) << "Client watcher triggered on client " << cli->GetId() << ", type: " << type2String(type)
+              << " state: " << state2String(state) << " path: " << path;
+    if (state == ZOO_CONNECTED_STATE) {
+        if (type == ZOO_DELETED_EVENT) {
+            string peer;
+            stringstream pathss(path);
+            // node path: /servers/<peer>
+            getline(pathss, peer, '/');
+            getline(pathss, peer, '/');
+            getline(pathss, peer, '/');
+            cli->RemovePeer(peer);
+        }
+    }
 }

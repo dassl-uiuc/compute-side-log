@@ -25,6 +25,7 @@
 using namespace std;
 
 class CSLClient {
+    friend void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
     struct RemoteConData {
         infinity::queues::QueuePair *qp;
         infinity::memory::RegionToken *remote_buffer_token;
@@ -53,10 +54,12 @@ class CSLClient {
 
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
     void ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
-
     void Append(const void *buf, uint32_t size);
+    
     void *GetBufData() { return buffer->getData(); }
     virtual void Reset();
+    bool AddPeer(const string &host_addr, uint16_t port);
+    bool RemovePeer(string host_addr);
     const set<string> &GetPeers() { return peers; }
     size_t GetBufSize() { return buf_size; }
     void SetInUse(bool is_inuse) { in_use = is_inuse; }
@@ -65,3 +68,5 @@ class CSLClient {
    private:
     void init(set<string> host_addresses, uint16_t port);
 };
+
+void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);

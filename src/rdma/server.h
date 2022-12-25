@@ -24,6 +24,7 @@
 using namespace std;
 
 class CSLServer {
+    friend void ServerWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
     struct LocalConData {
         infinity::queues::QueuePair *qp;
         infinity::memory::Buffer *buffer;
@@ -38,9 +39,6 @@ class CSLServer {
 
     size_t buf_size;
     int conn_cnt;
-   
-   protected:
-    void watcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
 
    public:
     CSLServer(uint16_t port, size_t buf_size, string mgr_addr="", uint16_t mgr_port=CSL_MGMT_PORT);
@@ -50,3 +48,5 @@ class CSLServer {
     int GetConnectionCount() { return conn_cnt; }
     void *GetBufData(int index = 0) { return local_props[index].buffer->getData(); }
 };
+
+void ServerWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);

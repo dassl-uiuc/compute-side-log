@@ -22,7 +22,7 @@ CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_addr, uint16_t m
 
     if (mgr_addr == "") return;  // skip connect to zookeeper
 
-    zh = zookeeper_init((mgr_addr + ":" + to_string(mgr_port)).c_str(), nullptr, 10000, 0, 0, 0);
+    zh = zookeeper_init((mgr_addr + ":" + to_string(mgr_port)).c_str(), ServerWatcher, 10000, 0, this, 0);
     if (!zh) {
         LOG(ERROR) << "Failed to init zookeeper handler, errno: " << errno;
         return;
@@ -72,4 +72,8 @@ CSLServer::~CSLServer() {
     }
     if (qp_factory) delete qp_factory;
     if (context) delete context;
+}
+
+void ServerWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx) {
+    LOG(INFO) << "Server watcher triggered, type: " << type << " state: " << state << " path: " << path;
 }
