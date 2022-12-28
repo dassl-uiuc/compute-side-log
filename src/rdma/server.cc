@@ -51,14 +51,24 @@ void CSLServer::Run() {
     while (true) {
         local_props.emplace_back();
         LocalConData &prop = local_props.back();
+        int socket = 0;
+        infinity::queues::serializedQueuePair *recv_buf;
+        size_t mr_size = 0;
 
-        LOG(INFO) << "Creating buffers to read from and write to" << endl;
-        prop.buffer = new infinity::memory::Buffer(context, buf_size);
+        LOG(INFO) << "Waiting for connection from new client...";
+        socket = qp_factory->waitIncomingConnection(&recv_buf);
+        DLOG_ASSERT(recv_buf->userDataSize == sizeof(mr_size))
+            << "Incorrect user data size"
+            << "expect " << sizeof(mr_size) << " receive " << recv_buf->userDataSize;
+        mr_size = *(reinterpret_cast<size_t *>(recv_buf->userData));
+
+        LOG(INFO) << "Creating buffers to read from and write to, size: " << mr_size / 1024.0 / 1024.0 << "MB" << endl;
+        prop.buffer = new infinity::memory::Buffer(context, mr_size);
         memset(prop.buffer->getData(), 0, prop.buffer->getSizeInBytes());
         prop.buffer_token = prop.buffer->createRegionToken();
 
-        LOG(INFO) << "Waiting for connection from new client...";
-        prop.qp = qp_factory->acceptIncomingConnection(prop.buffer_token, sizeof(*(prop.buffer_token)));
+        prop.qp =
+            qp_factory->replyIncomingConnection(socket, recv_buf, prop.buffer_token, sizeof(*(prop.buffer_token)));
         conn_cnt++;
         LOG(INFO) << "Connection accepted, total: " << conn_cnt;
     }

@@ -128,7 +128,7 @@ bool CSLClient::AddPeer(const string &host_addr, uint16_t port) {
 
     LOG(INFO) << "Connecting to " << host_addr;
     RemoteConData prop;
-    prop.qp = qp_factory->connectToRemoteHost(host_addr.c_str(), port);
+    prop.qp = qp_factory->connectToRemoteHost(host_addr.c_str(), port, &buf_size, sizeof(buf_size));
     LOG(INFO) << host_addr << " connected";
     prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
     remote_props[host_addr] = prop;
