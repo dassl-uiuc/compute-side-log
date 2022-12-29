@@ -9,11 +9,12 @@
 
 #include <errno.h>
 #include <glog/logging.h>
+#include <sys/select.h>
 
 #include "client.h"
 
 CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_addr, uint16_t mgr_port)
-    : buf_size(buf_size), conn_cnt(0) {
+    : buf_size(buf_size), conn_cnt(0), stop(false) {
     context = new infinity::core::Context(0, 1);
     qp_factory = new infinity::queues::QueuePairFactory(context);
     int ret;
@@ -51,7 +52,29 @@ CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_addr, uint16_t m
 }
 
 void CSLServer::Run() {
-    while (true) {
+    fd_set fds;
+    struct timeval tv = {
+        .tv_sec = 1,
+        .tv_usec = 0,
+    };
+    int listen_fd = qp_factory->getServerSocket();
+    int ret;
+    
+    while (!stop) {
+        FD_ZERO(&fds);
+        FD_SET(listen_fd, &fds);
+
+        ret = select(listen_fd + 1, &fds, nullptr, nullptr, &tv);
+        if (ret < 0) {
+            LOG(ERROR) << "Error select(), errno: " << ret;
+            return;
+        } else if (ret == 0) {
+            continue;
+        }
+
+        DLOG_ASSERT(FD_ISSET(listen_fd, &fds)) << "select returns non-0, but fd not set";
+        FD_CLR(listen_fd, &fds);
+
         int socket = 0;
         infinity::queues::serializedQueuePair *recv_buf;
         struct FileInfo fi;
