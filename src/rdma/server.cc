@@ -10,6 +10,8 @@
 #include <errno.h>
 #include <glog/logging.h>
 
+#include "client.h"
+
 CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_addr, uint16_t mgr_port)
     : buf_size(buf_size), conn_cnt(0) {
     context = new infinity::core::Context(0, 1);
@@ -33,11 +35,12 @@ CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_addr, uint16_t m
         .id = ZOO_ANYONE_ID_UNSAFE,
     }};
     struct ACL_vector aclv = {1, acl};
-    string node_path = (ZK_ROOT_PATH + "/" + qp_factory->getIpAddress());
+    string node_path = ZK_SVR_ROOT_PATH + "/" + qp_factory->getIpAddress();
     int value = 0;
-    ret = zoo_create(zh, ZK_ROOT_PATH.c_str(), (const char *)&value, sizeof(value), &aclv, ZOO_PERSISTENT, nullptr, 0);
+    ret = zoo_create(zh, ZK_SVR_ROOT_PATH.c_str(), (const char *)&value, sizeof(value), &aclv, ZOO_PERSISTENT, nullptr,
+                     0);
     if (ret && ret != ZNODEEXISTS) {
-        LOG(ERROR) << "Failed to create zk node: " << ZK_ROOT_PATH << ", errno: " << ret;
+        LOG(ERROR) << "Failed to create zk node: " << ZK_SVR_ROOT_PATH << ", errno: " << ret;
         return;
     }
     ret = zoo_create(zh, node_path.c_str(), (const char *)&value, sizeof(value), &aclv, ZOO_EPHEMERAL, nullptr, 0);
@@ -49,36 +52,56 @@ CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_addr, uint16_t m
 
 void CSLServer::Run() {
     while (true) {
-        local_props.emplace_back();
-        LocalConData &prop = local_props.back();
         int socket = 0;
         infinity::queues::serializedQueuePair *recv_buf;
-        size_t mr_size = 0;
+        struct FileInfo fi;
+        string filename;
 
         LOG(INFO) << "Waiting for connection from new client...";
         socket = qp_factory->waitIncomingConnection(&recv_buf);
-        DLOG_ASSERT(recv_buf->userDataSize == sizeof(mr_size))
+        DLOG_ASSERT(recv_buf->userDataSize == sizeof(FileInfo))
             << "Incorrect user data size"
-            << "expect " << sizeof(mr_size) << " receive " << recv_buf->userDataSize;
-        mr_size = *(reinterpret_cast<size_t *>(recv_buf->userData));
+            << "expect " << sizeof(FileInfo) << " receive " << recv_buf->userDataSize;
+        fi = *(reinterpret_cast<FileInfo *>(recv_buf->userData));
+        filename = fi.filename;
+        LOG(INFO) << "Get incoming connection: " << filename << ":" << fi.size / 1024.0 / 1024.0 << "MB";
 
-        LOG(INFO) << "Creating buffers to read from and write to, size: " << mr_size / 1024.0 / 1024.0 << "MB" << endl;
-        prop.buffer = new infinity::memory::Buffer(context, mr_size);
-        memset(prop.buffer->getData(), 0, prop.buffer->getSizeInBytes());
-        prop.buffer_token = prop.buffer->createRegionToken();
+        auto it = local_cons.find(filename);
+        if (it == local_cons.end()) {
+            LOG(INFO) << "Create new MR and qp";
+            LocalConData con;
+            con.buffer = new infinity::memory::Buffer(context, fi.size);
+            memset(con.buffer->getData(), 0, con.buffer->getSizeInBytes());
+            con.buffer_token = con.buffer->createRegionToken();
 
-        prop.qp =
-            qp_factory->replyIncomingConnection(socket, recv_buf, prop.buffer_token, sizeof(*(prop.buffer_token)));
-        conn_cnt++;
+            con.qp =
+                qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)));
+            local_cons.insert(make_pair(filename, con));
+            conn_cnt++;
+        } else {
+            LOG(INFO) << "Reuse exist MR and recreate qp";
+            LocalConData &con = it->second;
+            delete con.qp;
+            con.qp =
+                qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)));
+        }
         LOG(INFO) << "Connection accepted, total: " << conn_cnt;
     }
 }
 
+vector<string> CSLServer::GetAllFilename() {
+    vector<string> all_filename;
+    for (auto &c : local_cons) {
+        all_filename.emplace_back(c.first);
+    }
+    return all_filename;
+}
+
 CSLServer::~CSLServer() {
     if (zh) zookeeper_close(zh);
-    for (auto &p : local_props) {
-        if (p.buffer) delete p.buffer;
-        if (p.qp) delete p.qp;
+    for (auto &c : local_cons) {
+        if (c.second.buffer) delete c.second.buffer;
+        if (c.second.qp) delete c.second.qp;
     }
     if (qp_factory) delete qp_factory;
     if (context) delete context;

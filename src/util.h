@@ -1,6 +1,11 @@
 #pragma once
 
+#include <string>
+#include <set>
 #include <zookeeper/zookeeper.h>
+
+using std::string;
+using std::set;
 
 static const char* state2String(int state){
   if (state == 0)
@@ -36,4 +41,20 @@ static const char* type2String(int type){
     return "NOTWATCHING_EVENT";
 
   return "UNKNOWN_EVENT_TYPE";
+}
+
+string generateIpString(set<string> peers) {
+  if (peers.empty())
+    return "";
+  auto it = peers.begin();
+  string peers_str = *(it++);
+  for (; it != peers.end(); ++it)
+    peers_str.append(":").append(*it);
+  return peers_str;
+}
+
+set<string> parseIpString(string peers_str) {
+  set<string> peers;
+  // TODO
+  return peers;
 }

@@ -7,7 +7,7 @@
 
 class FakeCSLClient : public CSLClient {
    public:
-    FakeCSLClient(set<string> host_address, uint16_t port, size_t buf_size, uint32_t id) {
+    FakeCSLClient(set<string> host_address, uint16_t port, size_t buf_size, uint32_t id, const char *_name) {
         peers = host_address;
         in_use = false;
         this->buf_size = buf_size;

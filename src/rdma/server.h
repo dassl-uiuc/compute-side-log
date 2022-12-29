@@ -11,6 +11,8 @@
 #define THREADED
 #endif
 
+#include <unordered_map>
+
 #include <infinity/core/Configuration.h>
 #include <infinity/core/Context.h>
 #include <infinity/memory/Buffer.h>
@@ -34,7 +36,7 @@ class CSLServer {
    private:
     infinity::core::Context *context;
     infinity::queues::QueuePairFactory *qp_factory;
-    vector<LocalConData> local_props;
+    unordered_map<string, LocalConData> local_cons;
     zhandle_t *zh;
 
     size_t buf_size;
@@ -46,7 +48,8 @@ class CSLServer {
 
     void Run();
     int GetConnectionCount() { return conn_cnt; }
-    void *GetBufData(int index = 0) { return local_props[index].buffer->getData(); }
+    vector<string> GetAllFilename();
+    void *GetBufData(const string &filename) { return local_cons[filename].buffer->getData(); }
 };
 
 void ServerWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);

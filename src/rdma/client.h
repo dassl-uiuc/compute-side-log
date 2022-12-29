@@ -24,6 +24,11 @@
 
 using namespace std;
 
+struct FileInfo {
+    size_t size;
+    char filename[512];
+}__attribute__((packed));
+
 class CSLClient {
     friend void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
     struct RemoteConData {
@@ -43,13 +48,14 @@ class CSLClient {
     atomic<size_t> buf_offset;
     bool in_use;
     uint32_t id;
+    string filename;
 
     zhandle_t *zh;
 
    public:
     CSLClient() = default;
-    CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id = 0);
-    CSLClient(uint16_t mgr_port, string mgr_address, size_t buf_size, uint32_t id=0);
+    CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id = 0, const char *filename="");
+    CSLClient(uint16_t mgr_port, string mgr_address, size_t buf_size, uint32_t id=0, const char *filename="");
     ~CSLClient();
 
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
@@ -63,6 +69,7 @@ class CSLClient {
     const set<string> &GetPeers() { return peers; }
     size_t GetBufSize() { return buf_size; }
     void SetInUse(bool is_inuse) { in_use = is_inuse; }
+    void SetFilename(const char *name) { filename = name; }
     uint32_t GetId() { return id; }
 
    private:

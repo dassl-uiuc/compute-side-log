@@ -17,9 +17,10 @@ int main() {
     while (true) {
         sleep(1);
         cout << "total client: " << server.GetConnectionCount() << endl;
-        for (int i = 0; i < server.GetConnectionCount(); i++) {
-            cout << "client " << i << endl;
-            char *buf = (char *)server.GetBufData(i);
+        vector<string> all_files = server.GetAllFilename();
+        for (auto &f : all_files) {
+            cout << "file " << f << endl;
+            char *buf = (char *)server.GetBufData(f);
             for (int j = 0; j < 128; j++)
                 cout << buf[j];
             cout << endl;

@@ -57,7 +57,7 @@ int open(const char *pathname, int flags, ...) {
     }
 
     if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
-        auto csl_client = pool.GetClient(HOST_ADDRS, PORT, MR_SIZE);
+        auto csl_client = pool.GetClient(HOST_ADDRS, PORT, MR_SIZE, pathname);
         {
             std::lock_guard<std::mutex> lock(csl_lock);
             csl_fd_cli.insert(make_pair(fd, csl_client));
@@ -93,7 +93,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
     }
 
     if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
-        auto csl_client = pool.GetClient(HOST_ADDRS, PORT, MR_SIZE);
+        auto csl_client = pool.GetClient(HOST_ADDRS, PORT, MR_SIZE, pathname);
         {
             std::lock_guard<std::mutex> lock(csl_lock);
             csl_fd_cli.insert(make_pair(fd, csl_client));
