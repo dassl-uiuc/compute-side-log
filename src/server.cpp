@@ -16,7 +16,7 @@ void signal_handler(int signal) { stop = true; }
 
 int main() {
     signal(SIGINT, signal_handler);
-    CSLServer server(PORT, MR_SIZE, "localhost");
+    CSLServer server(PORT, MR_SIZE, ZK_DEFAULT_HOST);
 
     thread svr_th = thread([&]() { server.Run(); });
 

@@ -55,7 +55,7 @@ class CSLClient {
    public:
     CSLClient() = default;
     CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id = 0, const char *filename="");
-    CSLClient(uint16_t mgr_port, string mgr_address, size_t buf_size, uint32_t id=0, const char *filename="");
+    CSLClient(string mgr_hosts, size_t buf_size, uint32_t id=0, const char *filename="");
     ~CSLClient();
 
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
@@ -74,6 +74,7 @@ class CSLClient {
 
    private:
     void init(set<string> host_addresses, uint16_t port);
+    int getPeersFromZK();
 };
 
 void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);

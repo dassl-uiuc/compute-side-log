@@ -20,10 +20,10 @@ CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size,
     init(host_addresses, port);
 }
 
-CSLClient::CSLClient(uint16_t mgr_port, string mgr_address, size_t buf_size, uint32_t id, const char *name)
+CSLClient::CSLClient(string mgr_hosts, size_t buf_size, uint32_t id, const char *name)
     : buf_size(buf_size), buf_offset(0), in_use(false), id(id), filename(name), zh(nullptr) {
     int ret;
-    zh = zookeeper_init((mgr_address + ":" + to_string(mgr_port)).c_str(), ClientWatcher, 10000, 0, this, 0);
+    zh = zookeeper_init(mgr_hosts.c_str(), ClientWatcher, 10000, 0, this, 0);
     if (!zh) {
         LOG(ERROR) << "Failed to init zookeeper handler, errno: " << errno;
         return;

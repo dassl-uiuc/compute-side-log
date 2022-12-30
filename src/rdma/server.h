@@ -44,7 +44,7 @@ class CSLServer {
     bool stop;
 
    public:
-    CSLServer(uint16_t port, size_t buf_size, string mgr_addr="", uint16_t mgr_port=CSL_MGMT_PORT);
+    CSLServer(uint16_t port, size_t buf_size, string mgr_hosts="");
     ~CSLServer();
 
     void Run();

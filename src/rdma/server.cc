@@ -13,7 +13,7 @@
 
 #include "client.h"
 
-CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_addr, uint16_t mgr_port)
+CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts)
     : buf_size(buf_size), conn_cnt(0), stop(false) {
     context = new infinity::core::Context(0, 1);
     qp_factory = new infinity::queues::QueuePairFactory(context);
@@ -23,9 +23,9 @@ CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_addr, uint16_t m
     qp_factory->bindToPort(port);
     LOG(INFO) << "Bind to port";
 
-    if (mgr_addr == "") return;  // skip connect to zookeeper
+    if (mgr_hosts == "") return;  // skip connect to zookeeper
 
-    zh = zookeeper_init((mgr_addr + ":" + to_string(mgr_port)).c_str(), ServerWatcher, 10000, 0, this, 0);
+    zh = zookeeper_init(mgr_hosts.c_str(), ServerWatcher, 10000, 0, this, 0);
     if (!zh) {
         LOG(ERROR) << "Failed to init zookeeper handler, errno: " << errno;
         return;
