@@ -97,9 +97,11 @@ void CSLClient::init(set<string> host_addresses, uint16_t port) {
 }
 
 CSLClient::~CSLClient() {
-    string node_path = ZK_CLI_ROOT_PATH + "/" + qp_factory->getIpAddress();
-    zoo_delete(zh, node_path.c_str(), -1);
-    if (zh) zookeeper_close(zh);
+    if (zh) {
+        string node_path = ZK_CLI_ROOT_PATH + "/" + qp_factory->getIpAddress();
+        zoo_delete(zh, node_path.c_str(), -1);
+        zookeeper_close(zh);
+    }
     if (buffer) delete buffer;
     for (auto &p : remote_props) {
         if (p.second.qp) delete p.second.qp;

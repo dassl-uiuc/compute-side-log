@@ -43,6 +43,9 @@ static const char* type2String(int type){
   return "UNKNOWN_EVENT_TYPE";
 }
 
+/**
+ * Generate ip string concatenated with ":"
+ */
 string generateIpString(set<string> peers) {
   if (peers.empty())
     return "";
@@ -53,8 +56,18 @@ string generateIpString(set<string> peers) {
   return peers_str;
 }
 
+/**
+ * Separate ip string concatenated with ":" 
+ */
 set<string> parseIpString(string peers_str) {
+  if (peers_str.empty())
+    return {};
   set<string> peers;
-  // TODO
+  int pos, next_pos = -1;
+  do {
+    pos = next_pos + 1;
+    next_pos = peers_str.find(':', pos);
+    peers.insert(peers_str.substr(pos, next_pos - pos));
+  } while(next_pos != -1);
   return peers;
 }
