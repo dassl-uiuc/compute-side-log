@@ -15,6 +15,8 @@
 #include "../csl_config.h"
 #include "../util.h"
 
+using infinity::queues::QueuePairFactory;
+
 CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id, const char *name)
     : buf_size(buf_size), buf_offset(0), in_use(false), id(id), filename(name), zh(nullptr) {
     init(host_addresses, port);
@@ -22,28 +24,15 @@ CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size,
 
 CSLClient::CSLClient(string mgr_hosts, size_t buf_size, uint32_t id, const char *name)
     : buf_size(buf_size), buf_offset(0), in_use(false), id(id), filename(name), zh(nullptr) {
-    int ret;
+    int ret, n_peers;
     zh = zookeeper_init(mgr_hosts.c_str(), ClientWatcher, 10000, 0, this, 0);
     if (!zh) {
         LOG(ERROR) << "Failed to init zookeeper handler, errno: " << errno;
         return;
     }
 
-    struct String_vector peerv;
-    ret = zoo_get_children(zh, ZK_SVR_ROOT_PATH.c_str(), 0, &peerv);
-    if (ret) {
-        LOG(ERROR) << "Failed to get servers, errno: " << ret;
-        return;
-    } else if (peerv.count <= 0) {
-        LOG(ERROR) << "No server found";
-        return;
-    }
-
     set<string> host_addresses;
-    for (int i = 0; i < peerv.count; i++) {
-        host_addresses.insert(peerv.data[i]);
-    }
-    LOG(INFO) << "Found " << peerv.count << " servers: " << generateIpString(host_addresses);
+    n_peers = getPeersFromZK(host_addresses);  // check if client node has been created before
 
     init(host_addresses, PORT);
 
@@ -56,28 +45,7 @@ CSLClient::CSLClient(string mgr_hosts, size_t buf_size, uint32_t id, const char 
         }
     }
 
-    struct ACL acl[] = {{
-        .perms = ZOO_PERM_ALL,
-        .id = ZOO_ANYONE_ID_UNSAFE,
-    }};
-    struct ACL_vector aclv = {
-        .count = 1,
-        .data = acl,
-    };
-    string node_path = ZK_CLI_ROOT_PATH + "/" + qp_factory->getIpAddress();
-    int value = 0;
-    ret = zoo_create(zh, ZK_CLI_ROOT_PATH.c_str(), (const char *)&value, sizeof(value), &aclv, ZOO_PERSISTENT, nullptr,
-                     0);
-    if (ret && ret != ZNODEEXISTS) {
-        LOG(ERROR) << "Failed to create zk node: " << ZK_CLI_ROOT_PATH << ", errno: " << ret;
-        return;
-    }
-    string peers_str = generateIpString(peers);
-    ret = zoo_create(zh, node_path.c_str(), peers_str.data(), peers_str.size(), &aclv, ZOO_PERSISTENT, nullptr, 0);
-    if (ret) {
-        LOG(ERROR) << "Failed to create zk node: " << node_path << ", errno: " << ret;
-        return;
-    }
+    if (n_peers == 0) createClientZKNode();  // node doesn't exist, need to create client ZK node
 }
 
 void CSLClient::init(set<string> host_addresses, uint16_t port) {
@@ -96,9 +64,68 @@ void CSLClient::init(set<string> host_addresses, uint16_t port) {
     LOG(INFO) << "csl client " << id << " created, buffer size " << buf_size;
 }
 
+int CSLClient::getPeersFromZK(set<string> &peer_ips) {
+    int ret, buf_len = 512;
+    string node_path = ZK_CLI_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
+    char peers_buf[512];
+    ret = zoo_get(zh, node_path.c_str(), 1, peers_buf, &buf_len, nullptr);
+    if (ret) {  // client node doesn't exist, get peer ip from /servers
+        if (ret != ZNONODE) {
+            LOG(ERROR) << "Failed to get zk node " << node_path << ", errno: " << ret;
+            return 0;
+        } else {
+            struct String_vector peerv;
+            ret = zoo_get_children(zh, ZK_SVR_ROOT_PATH.c_str(), 0, &peerv);
+            if (ret) {
+                LOG(ERROR) << "Failed to get servers, errno: " << ret;
+                return 0;
+            } else if (peerv.count <= 0) {
+                LOG(ERROR) << "No server found";
+                return 0;
+            }
+
+            for (int i = 0; i < peerv.count; i++) {
+                peer_ips.insert(peerv.data[i]);
+            }
+            LOG(INFO) << "Found " << peerv.count << " servers: " << generateIpString(peer_ips);
+            return 0;
+        }
+    } else {  // client node exist
+        string peers_str(peers_buf, buf_len);
+        LOG(INFO) << "Reconnect to servers: " << peers_str;
+        return parseIpString(peers_str, peer_ips);
+    }
+}
+
+void CSLClient::createClientZKNode() {
+    int ret;
+    struct ACL acl[] = {{
+        .perms = ZOO_PERM_ALL,
+        .id = ZOO_ANYONE_ID_UNSAFE,
+    }};
+    struct ACL_vector aclv = {
+        .count = 1,
+        .data = acl,
+    };
+    string node_path = ZK_CLI_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
+    int value = 0;
+    ret = zoo_create(zh, ZK_CLI_ROOT_PATH.c_str(), (const char *)&value, sizeof(value), &aclv, ZOO_PERSISTENT, nullptr,
+                     0);
+    if (ret && ret != ZNODEEXISTS) {
+        LOG(ERROR) << "Failed to create zk node: " << ZK_CLI_ROOT_PATH << ", errno: " << ret;
+        return;
+    }
+    string peers_str = generateIpString(peers);
+    ret = zoo_create(zh, node_path.c_str(), peers_str.data(), peers_str.size(), &aclv, ZOO_PERSISTENT, nullptr, 0);
+    if (ret) {
+        LOG(ERROR) << "Failed to create zk node: " << node_path << ", errno: " << ret;
+        return;
+    }
+}
+
 CSLClient::~CSLClient() {
     if (zh) {
-        string node_path = ZK_CLI_ROOT_PATH + "/" + qp_factory->getIpAddress();
+        string node_path = ZK_CLI_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
         zoo_delete(zh, node_path.c_str(), -1);
         zookeeper_close(zh);
     }

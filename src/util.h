@@ -46,7 +46,7 @@ static const char* type2String(int type){
 /**
  * Generate ip string concatenated with ":"
  */
-string generateIpString(set<string> peers) {
+string generateIpString(set<string> &peers) {
   if (peers.empty())
     return "";
   auto it = peers.begin();
@@ -57,17 +57,18 @@ string generateIpString(set<string> peers) {
 }
 
 /**
- * Separate ip string concatenated with ":" 
+ * Separate ip string concatenated with ":"
+ * @return number of ips parsed
  */
-set<string> parseIpString(string peers_str) {
+int parseIpString(string &peers_str, set<string> &peers) {
   if (peers_str.empty())
-    return {};
-  set<string> peers;
-  int pos, next_pos = -1;
+    return 0;
+  int pos, next_pos = -1, cnt = 0;
   do {
     pos = next_pos + 1;
     next_pos = peers_str.find(':', pos);
     peers.insert(peers_str.substr(pos, next_pos - pos));
+    cnt++;
   } while(next_pos != -1);
-  return peers;
+  return cnt;
 }

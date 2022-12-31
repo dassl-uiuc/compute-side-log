@@ -13,6 +13,8 @@
 
 #include "client.h"
 
+using infinity::queues::QueuePairFactory;
+
 CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts)
     : buf_size(buf_size), conn_cnt(0), stop(false) {
     context = new infinity::core::Context(0, 1);
@@ -36,7 +38,7 @@ CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts)
         .id = ZOO_ANYONE_ID_UNSAFE,
     }};
     struct ACL_vector aclv = {1, acl};
-    string node_path = ZK_SVR_ROOT_PATH + "/" + qp_factory->getIpAddress();
+    string node_path = ZK_SVR_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
     int value = 0;
     ret = zoo_create(zh, ZK_SVR_ROOT_PATH.c_str(), (const char *)&value, sizeof(value), &aclv, ZOO_PERSISTENT, nullptr,
                      0);

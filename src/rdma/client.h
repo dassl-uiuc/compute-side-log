@@ -74,7 +74,8 @@ class CSLClient {
 
    private:
     void init(set<string> host_addresses, uint16_t port);
-    int getPeersFromZK();
+    void createClientZKNode();
+    int getPeersFromZK(set<string> &peer_ips);
 };
 
 void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
