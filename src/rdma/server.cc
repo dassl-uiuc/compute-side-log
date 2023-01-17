@@ -80,18 +80,20 @@ void CSLServer::Run() {
         int socket = 0;
         infinity::queues::serializedQueuePair *recv_buf;
         struct FileInfo fi;
-        string filename;
+        string file_id;
 
         LOG(INFO) << "Waiting for connection from new client...";
         socket = qp_factory->waitIncomingConnection(&recv_buf);
         DLOG_ASSERT(recv_buf->userDataSize == sizeof(FileInfo))
             << "Incorrect user data size"
             << "expect " << sizeof(FileInfo) << " receive " << recv_buf->userDataSize;
+        // Get file information from client
         fi = *(reinterpret_cast<FileInfo *>(recv_buf->userData));
-        filename = fi.filename;
-        LOG(INFO) << "Get incoming connection: " << filename << ":" << fi.size / 1024.0 / 1024.0 << "MB";
+        file_id = fi.filename;
+        LOG(INFO) << "Get incoming connection: " << file_id << ":" << fi.size / 1024.0 / 1024.0 << "MB";
 
-        auto it = local_cons.find(filename);
+        // Find if MR and QP have been created for this file
+        auto it = local_cons.find(file_id);
         if (it == local_cons.end()) {
             LOG(INFO) << "Create new MR and qp";
             LocalConData con;
@@ -101,11 +103,12 @@ void CSLServer::Run() {
 
             con.qp =
                 qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)));
-            local_cons.insert(make_pair(filename, con));
+            local_cons.insert(make_pair(file_id, con));
             conn_cnt++;
         } else {
             LOG(INFO) << "Reuse exist MR and recreate qp";
             LocalConData &con = it->second;
+            // delete old QP
             delete con.qp;
             con.qp =
                 qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)));
@@ -114,12 +117,24 @@ void CSLServer::Run() {
     }
 }
 
-vector<string> CSLServer::GetAllFilename() {
-    vector<string> all_filename;
+vector<string> CSLServer::GetAllFileId() {
+    vector<string> all_file_id;
     for (auto &c : local_cons) {
-        all_filename.emplace_back(c.first);
+        all_file_id.emplace_back(c.first);
     }
-    return all_filename;
+    return all_file_id;
+}
+
+size_t CSLServer::findSize(const string &file_id) {
+    if (local_cons.find(file_id) == local_cons.end())
+        return 0;
+    char *mr_begin = reinterpret_cast<char *>(local_cons[file_id].buffer->getData());
+    char *buf = mr_begin + buf_size - 1;  // points to the end of the MR
+    while (buf >= mr_begin) {
+        if (*buf == TAIL_MARKER) break;
+        buf--;
+    }
+    return buf - mr_begin;
 }
 
 CSLServer::~CSLServer() {

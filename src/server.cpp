@@ -23,7 +23,7 @@ int main() {
     while (!stop) {
         sleep(1);
         cout << "total client: " << server.GetConnectionCount() << endl;
-        vector<string> all_files = server.GetAllFilename();
+        vector<string> all_files = server.GetAllFileId();
         for (auto &f : all_files) {
             cout << "file " << f << endl;
             char *buf = (char *)server.GetBufData(f);

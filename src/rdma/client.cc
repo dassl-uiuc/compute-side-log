@@ -182,7 +182,8 @@ bool CSLClient::AddPeer(const string &host_addr, uint16_t port) {
     RemoteConData prop;
     struct FileInfo fi;
     fi.size = buf_size;
-    strcpy(fi.filename, filename.c_str());
+    string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;  // e.g. "10.0.0.1:/home/user/001.log"
+    strcpy(fi.filename, file_identifier.c_str());
     prop.qp = qp_factory->connectToRemoteHost(host_addr.c_str(), port, &fi, sizeof(fi));
     LOG(INFO) << host_addr << " connected";
     prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());

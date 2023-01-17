@@ -49,9 +49,12 @@ class CSLServer {
 
     void Run();
     int GetConnectionCount() { return conn_cnt; }
-    vector<string> GetAllFilename();
-    void *GetBufData(const string &filename) { return local_cons[filename].buffer->getData(); }
+    vector<string> GetAllFileId();
+    void *GetBufData(const string &fileid) { return local_cons[fileid].buffer->getData(); }
     void Stop() { stop = true; }
+
+   private:
+    size_t findSize(const string &file_id);
 };
 
 void ServerWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
