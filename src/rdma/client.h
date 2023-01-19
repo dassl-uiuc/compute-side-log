@@ -24,16 +24,12 @@
 
 using namespace std;
 
-struct FileInfo {
-    size_t size;
-    char filename[512];
-}__attribute__((packed));
-
 class CSLClient {
     friend void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
     struct RemoteConData {
         infinity::queues::QueuePair *qp;
         infinity::memory::RegionToken *remote_buffer_token;
+        int socket;
     };
 
    protected:
@@ -63,9 +59,30 @@ class CSLClient {
     void Append(const void *buf, uint32_t size);
     
     void *GetBufData() { return buffer->getData(); }
+    
+    /**
+     * Reset the client to unuse state
+     */
     virtual void Reset();
+
+    /**
+     * Connect to a replication peer
+     * @param host_addr address of the peer
+     * @param port port of the peer
+     */
     bool AddPeer(const string &host_addr, uint16_t port);
+
+    /**
+     * Remove a replication peer from the client
+     * @param host_addr address of the peer
+     */
     bool RemovePeer(string host_addr);
+
+    /**
+     * Send finalization request to peers to clean state on peers
+     */
+    void SendFinalization();
+
     const set<string> &GetPeers() { return peers; }
     size_t GetBufSize() { return buf_size; }
     void SetInUse(bool is_inuse) { in_use = is_inuse; }

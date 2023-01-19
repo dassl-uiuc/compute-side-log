@@ -11,12 +11,11 @@
 #include <glog/logging.h>
 #include <sys/select.h>
 
-#include "client.h"
+#include "common.h"
 
 using infinity::queues::QueuePairFactory;
 
-CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts)
-    : buf_size(buf_size), conn_cnt(0), stop(false) {
+CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts) : buf_size(buf_size), stop(false) {
     context = new infinity::core::Context(0, 1);
     qp_factory = new infinity::queues::QueuePairFactory(context);
     int ret;
@@ -61,60 +60,120 @@ void CSLServer::Run() {
     };
     int listen_fd = qp_factory->getServerSocket();
     int ret;
-    
+    int max_fd;
+    // set<int> client_socks;
+
     while (!stop) {
         FD_ZERO(&fds);
         FD_SET(listen_fd, &fds);
+        max_fd = listen_fd;
+        for (auto &c : local_cons) {
+            if (c.second.socket > 0) {
+                max_fd = max(max_fd, c.second.socket);  // find the max of all active fds
+                FD_SET(c.second.socket, &fds);
+            }
+        }
 
-        ret = select(listen_fd + 1, &fds, nullptr, nullptr, &tv);
+        ret = select(max_fd + 1, &fds, nullptr, nullptr, &tv);
         if (ret < 0) {
             LOG(ERROR) << "Error select(), errno: " << ret;
             return;
-        } else if (ret == 0) {
+        } else if (ret > 0) {
+            // check for incoming connection
+            if (FD_ISSET(listen_fd, &fds)) {
+                FD_CLR(listen_fd, &fds);
+                handleIncomingConnection();
+            }
+            // then check for client requests
+            for (auto &c : local_cons) {
+                if (c.second.socket > 0 && FD_ISSET(c.second.socket, &fds)) {
+                    FD_CLR(c.second.socket, &fds);
+                    ret = handleClientRequest(c.second.socket);
+                    if (ret == 0)
+                        c.second.socket = -1;  // prevent triggerring select again
+                }
+            }
+        } else {
             continue;
         }
-
-        DLOG_ASSERT(FD_ISSET(listen_fd, &fds)) << "select returns non-0, but fd not set";
-        FD_CLR(listen_fd, &fds);
-
-        int socket = 0;
-        infinity::queues::serializedQueuePair *recv_buf;
-        struct FileInfo fi;
-        string file_id;
-
-        LOG(INFO) << "Waiting for connection from new client...";
-        socket = qp_factory->waitIncomingConnection(&recv_buf);
-        DLOG_ASSERT(recv_buf->userDataSize == sizeof(FileInfo))
-            << "Incorrect user data size"
-            << "expect " << sizeof(FileInfo) << " receive " << recv_buf->userDataSize;
-        // Get file information from client
-        fi = *(reinterpret_cast<FileInfo *>(recv_buf->userData));
-        file_id = fi.filename;
-        LOG(INFO) << "Get incoming connection: " << file_id << ":" << fi.size / 1024.0 / 1024.0 << "MB";
-
-        // Find if MR and QP have been created for this file
-        auto it = local_cons.find(file_id);
-        if (it == local_cons.end()) {
-            LOG(INFO) << "Create new MR and qp";
-            LocalConData con;
-            con.buffer = new infinity::memory::Buffer(context, fi.size);
-            memset(con.buffer->getData(), 0, con.buffer->getSizeInBytes());
-            con.buffer_token = con.buffer->createRegionToken();
-
-            con.qp =
-                qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)));
-            local_cons.insert(make_pair(file_id, con));
-            conn_cnt++;
-        } else {
-            LOG(INFO) << "Reuse exist MR and recreate qp";
-            LocalConData &con = it->second;
-            // delete old QP
-            delete con.qp;
-            con.qp =
-                qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)));
-        }
-        LOG(INFO) << "Connection accepted, total: " << conn_cnt;
     }
+}
+
+void CSLServer::handleIncomingConnection() {
+    int socket = 0;
+    infinity::queues::serializedQueuePair *recv_buf;
+    struct FileInfo fi;
+    string file_id;
+
+    LOG(INFO) << "Waiting for connection from new client...";
+    socket = qp_factory->waitIncomingConnection(&recv_buf);
+    DLOG_ASSERT(recv_buf->userDataSize == sizeof(FileInfo))
+        << "Incorrect user data size, "
+        << "expect " << sizeof(FileInfo) << " receive " << recv_buf->userDataSize;
+    // Get file information from client
+    fi = *(reinterpret_cast<FileInfo *>(recv_buf->userData));
+    file_id = fi.file_id;
+    LOG(INFO) << "Get incoming connection: " << file_id << ":" << fi.size / 1024.0 / 1024.0 << "MB";
+
+    // Find if MR and QP have been created for this file
+    auto it = local_cons.find(file_id);
+    if (it == local_cons.end()) {
+        LOG(INFO) << "Create new MR and qp";
+        LocalConData con;
+        con.socket = socket;
+        con.buffer = new infinity::memory::Buffer(context, fi.size);
+        memset(con.buffer->getData(), 0, con.buffer->getSizeInBytes());
+        con.buffer_token = con.buffer->createRegionToken();
+
+        con.qp =
+            qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)), false);
+        local_cons.insert(make_pair(file_id, con));
+        // conn_cnt++;
+    } else {
+        LOG(INFO) << "Reuse exist MR and recreate qp";
+        LocalConData &con = it->second;
+        con.socket = socket;
+        // delete old QP
+        delete con.qp; // ? is this needed?
+        con.qp = qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)));
+    }
+    LOG(INFO) << "Connection accepted, total: " << GetConnectionCount();
+}
+
+int CSLServer::handleClientRequest(int socket) {
+    ClientReq req;
+    int ret;
+
+    ret = recv(socket, &req, sizeof(req), 0);
+    if (ret <= 0)
+        return ret;
+    DLOG_ASSERT(ret == sizeof(req)) << "Incorrect client request size, "
+                                    << "expect " << sizeof(req) << " receive " << ret;
+
+    string file_id(req.file_id);
+    auto it = local_cons.find(file_id);
+    switch (req.type) {
+        case CLOSE_FILE:
+            if (it == local_cons.end()) {
+                LOG(ERROR) << "can't find file id: " << file_id;
+                break;
+            }
+            finalizeConData(it->second);
+            local_cons.erase(it);
+            LOG(INFO) << "File: " << file_id << " finalized";
+            break;
+        default:
+            LOG(ERROR) << "Unknown request type" << req.type;
+            break;
+    }
+
+    return ret;
+}
+
+void CSLServer::finalizeConData(struct LocalConData &con) {
+    // * no resource reuse for now
+    delete con.qp;
+    delete con.buffer;
 }
 
 vector<string> CSLServer::GetAllFileId() {
@@ -126,8 +185,7 @@ vector<string> CSLServer::GetAllFileId() {
 }
 
 size_t CSLServer::findSize(const string &file_id) {
-    if (local_cons.find(file_id) == local_cons.end())
-        return 0;
+    if (local_cons.find(file_id) == local_cons.end()) return 0;
     char *mr_begin = reinterpret_cast<char *>(local_cons[file_id].buffer->getData());
     char *buf = mr_begin + buf_size - 1;  // points to the end of the MR
     while (buf >= mr_begin) {

@@ -31,6 +31,7 @@ class CSLServer {
         infinity::queues::QueuePair *qp;
         infinity::memory::Buffer *buffer;
         infinity::memory::RegionToken *buffer_token;
+        int socket;
     };
 
    private:
@@ -40,7 +41,7 @@ class CSLServer {
     zhandle_t *zh;
 
     size_t buf_size;
-    int conn_cnt;
+    // int conn_cnt;
     bool stop;
 
    public:
@@ -48,13 +49,17 @@ class CSLServer {
     ~CSLServer();
 
     void Run();
-    int GetConnectionCount() { return conn_cnt; }
+    int GetConnectionCount() { return local_cons.size(); }
     vector<string> GetAllFileId();
     void *GetBufData(const string &fileid) { return local_cons[fileid].buffer->getData(); }
     void Stop() { stop = true; }
 
    private:
     size_t findSize(const string &file_id);
+    void handleIncomingConnection();
+    int handleClientRequest(int socket);
+
+    void finalizeConData(struct LocalConData &con);
 };
 
 void ServerWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);

@@ -14,6 +14,7 @@
 
 #include "../csl_config.h"
 #include "../util.h"
+#include "common.h"
 
 using infinity::queues::QueuePairFactory;
 
@@ -132,6 +133,7 @@ CSLClient::~CSLClient() {
     if (buffer) delete buffer;
     for (auto &p : remote_props) {
         if (p.second.qp) delete p.second.qp;
+        if (p.second.socket >= 0) close(p.second.socket);
     }
     if (qp_factory) delete qp_factory;
     if (context) delete context;
@@ -169,6 +171,7 @@ void CSLClient::Reset() {
     buf_offset.store(0);
     SetInUse(false);
     filename.clear();
+    SendFinalization();
     LOG(INFO) << "csl client " << id << "recycled, MR usage: " << usage << "MB";
 }
 
@@ -182,9 +185,9 @@ bool CSLClient::AddPeer(const string &host_addr, uint16_t port) {
     RemoteConData prop;
     struct FileInfo fi;
     fi.size = buf_size;
-    string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;  // e.g. "10.0.0.1:/home/user/001.log"
-    strcpy(fi.filename, file_identifier.c_str());
-    prop.qp = qp_factory->connectToRemoteHost(host_addr.c_str(), port, &fi, sizeof(fi));
+    const string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;  // e.g. "10.0.0.1:/home/user/001.log"
+    strcpy(fi.file_id, file_identifier.c_str());
+    prop.qp = qp_factory->connectToRemoteHost(host_addr.c_str(), port, &fi, sizeof(fi), &(prop.socket));
     LOG(INFO) << host_addr << " connected";
     prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
     remote_props[host_addr] = prop;
@@ -205,6 +208,17 @@ bool CSLClient::RemovePeer(string host_addr) {
     peers.erase(host_addr);
     LOG(INFO) << "Client " << id << " removes peer " << host_addr;
     return true;
+}
+
+void CSLClient::SendFinalization() {
+    ClientReq req;
+    const string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;
+    strcpy(req.file_id, file_identifier.c_str());
+    req.type = CLOSE_FILE;
+
+    for (auto &p : remote_props) {
+        send(p.second.socket, &req, sizeof(req), 0);
+    }
 }
 
 void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx) {

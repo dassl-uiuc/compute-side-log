@@ -13,6 +13,8 @@ int main() {
     client2.Append(test_buf, 128);
     char get;
     std::cin >> get;
+
+    client2.SendFinalization();
     
     return 0;
 }
