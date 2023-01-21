@@ -19,6 +19,7 @@
 #include <infinity/queues/QueuePairFactory.h>
 #include <zookeeper/zookeeper.h>
 
+#include <mutex>
 #include <set>
 #include <unordered_map>
 
@@ -45,6 +46,7 @@ class CSLClient {
     bool in_use;
     uint32_t id;
     string filename;
+    mutex recover_lock;
 
     zhandle_t *zh;
 
@@ -73,13 +75,7 @@ class CSLClient {
     bool AddPeer(const string &host_addr, uint16_t port);
 
     /**
-     * Remove a replication peer from the client
-     * @param host_addr address of the peer
-     */
-    bool RemovePeer(string host_addr);
-
-    /**
-     * Send finalization request to peers to clean state on peers
+     * Send finalization request to peers to clean state on server
      */
     void SendFinalization();
 
@@ -93,6 +89,19 @@ class CSLClient {
     void init(set<string> host_addresses, uint16_t port);
     void createClientZKNode();
     int getPeersFromZK(set<string> &peer_ips);
+    /**
+     * Remove a replication peer from the client and add a new replication peer
+     * @param old_addr address of the peer to be removed
+     * @return address of the new peer, empty if replacement failed
+     */
+    string replacePeer(string &old_addr);
+
+    /**
+     * Bring the state of a new peer up to date
+     * @param new_addr address of the peer to be recovered
+     * @return true if recovery is successful
+     */
+    bool recoverPeer(string &new_addr);
 };
 
 void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);

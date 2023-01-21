@@ -160,6 +160,8 @@ void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size
 }
 
 void CSLClient::Append(const void *buf, uint32_t size) {
+    // disable new append during recovering
+    lock_guard<mutex> guard(recover_lock);  // TODO: enable async recovery
     size_t cur_off = buf_offset.fetch_add(size);
     memcpy((char *)mem + cur_off, buf, size);
     WriteSync(cur_off, cur_off, size);
@@ -196,17 +198,58 @@ bool CSLClient::AddPeer(const string &host_addr, uint16_t port) {
     return true;
 }
 
-bool CSLClient::RemovePeer(string host_addr) {
-    auto it = remote_props.find(host_addr);
+string CSLClient::replacePeer(string &old_addr) {
+    string new_addr;
+    struct String_vector peerv;
+    int ret, i;
+
+    // remove old peer
+    auto it = remote_props.find(old_addr);
     if (it == remote_props.end()) {
-        LOG(ERROR) << "Peer " << host_addr << " not connected.";
-        return false;
+        LOG(ERROR) << "Peer " << old_addr << " not connected.";
+        return "";
     }
 
     delete it->second.qp;
     remote_props.erase(it);
-    peers.erase(host_addr);
-    LOG(INFO) << "Client " << id << " removes peer " << host_addr;
+    peers.erase(old_addr);
+    LOG(INFO) << "Client " << id << " removes peer " << old_addr;
+
+    // find a new peer from ZK
+    ret = zoo_get_children(zh, ZK_SVR_ROOT_PATH.c_str(), 0, &peerv);
+    if (ret) {
+        LOG(ERROR) << "Failed to get servers, errno: " << ret;
+        return "";
+    } else if (peerv.count <= 0) {
+        LOG(ERROR) << "No server found";
+        return "";
+    }
+
+    for (i = 0; i < peerv.count; i++) {
+        if ((peers.find(peerv.data[i]) == peers.end()) && (old_addr.compare(peerv.data[i]) == 0)) {
+            new_addr = peerv.data[i];  // find a new peer different from current peers
+            break;
+        }
+    }
+    if (i >= peerv.count) {
+        LOG(ERROR) << "Failed to find new peers";
+        return "";
+    }
+
+    if (AddPeer(new_addr, PORT)) {
+        LOG(INFO) << "Replaced old peer " << old_addr << " with new peer " << new_addr;
+        return new_addr;
+    } else {
+        return "";
+    }
+}
+
+bool CSLClient::recoverPeer(string &new_peer) {
+    lock_guard<mutex> guard(recover_lock);
+    auto token = make_shared<infinity::requests::RequestToken>(context);
+    auto &p = remote_props[new_peer];
+    p.qp->write(buffer, 0, p.remote_buffer_token, 0, buf_offset.load(), token.get());  // ? need mannual segmentation?
+    token->waitUntilCompleted();
     return true;
 }
 
@@ -227,13 +270,17 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
               << " state: " << state2String(state) << " path: " << path;
     if (state == ZOO_CONNECTED_STATE) {
         if (type == ZOO_DELETED_EVENT) {
-            string peer;
+            string peer, new_peer;
             stringstream pathss(path);
             // node path: /servers/<peer>
             getline(pathss, peer, '/');
             getline(pathss, peer, '/');
             getline(pathss, peer, '/');
-            cli->RemovePeer(peer);
+            if ((new_peer = cli->replacePeer(peer)).empty()) {
+                LOG(ERROR) << "replacement failed";
+                return;
+            }
+            cli->recoverPeer(new_peer);
         }
     }
 }

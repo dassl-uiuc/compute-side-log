@@ -3,7 +3,7 @@
 #include <set>
 #include <string>
 
-const uint16_t PORT = 8011;
+const uint16_t PORT = 8011;  // data plane service port
 const std::string ZK_DEFAULT_HOST = "127.0.0.1:2181";
 const std::string ZK_SVR_ROOT_PATH = "/servers";
 const std::string ZK_CLI_ROOT_PATH = "/clients";
