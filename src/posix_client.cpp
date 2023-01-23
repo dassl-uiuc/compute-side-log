@@ -1,3 +1,4 @@
+#include <csl.h>
 #include <error.h>
 #include <fcntl.h>
 #include <stdlib.h>
@@ -8,7 +9,6 @@
 #include <iostream>
 #include <string>
 
-#include "csl.h"
 #include "csl_config.h"
 
 size_t MSG_SIZE = 154;

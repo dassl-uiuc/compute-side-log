@@ -10,6 +10,7 @@
 #include <glog/logging.h>
 #include <stdlib.h>
 
+#include <chrono>
 #include <memory>
 
 #include "../csl_config.h"
@@ -19,12 +20,18 @@
 using infinity::queues::QueuePairFactory;
 
 CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id, const char *name)
-    : buf_size(buf_size), buf_offset(0), in_use(false), id(id), filename(name), zh(nullptr) {
+    : rep_factor(host_addresses.size()),
+      buf_size(buf_size),
+      buf_offset(0),
+      in_use(false),
+      id(id),
+      filename(name),
+      zh(nullptr) {
     init(host_addresses, port);
 }
 
-CSLClient::CSLClient(string mgr_hosts, size_t buf_size, uint32_t id, const char *name)
-    : buf_size(buf_size), buf_offset(0), in_use(false), id(id), filename(name), zh(nullptr) {
+CSLClient::CSLClient(string mgr_hosts, size_t buf_size, uint32_t id, const char *name, int rep_num)
+    : rep_factor(rep_num), buf_size(buf_size), buf_offset(0), in_use(false), id(id), filename(name), zh(nullptr) {
     int ret, n_peers;
     zh = zookeeper_init(mgr_hosts.c_str(), ClientWatcher, 10000, 0, this, 0);
     if (!zh) {
@@ -83,9 +90,12 @@ int CSLClient::getPeersFromZK(set<string> &peer_ips) {
             } else if (peerv.count <= 0) {
                 LOG(ERROR) << "No server found";
                 return 0;
+            } else if (peerv.count < rep_factor) {
+                LOG(WARNING) << "Insufficient replication servers, require " << rep_factor << ", found " << peerv.count;
+                rep_factor = peerv.count;  // working at reduced reliability
             }
 
-            for (int i = 0; i < peerv.count; i++) {
+            for (int i = 0; i < rep_factor; i++) {
                 peer_ips.insert(peerv.data[i]);
             }
             LOG(INFO) << "Found " << peerv.count << " servers: " << generateIpString(peer_ips);
@@ -187,7 +197,8 @@ bool CSLClient::AddPeer(const string &host_addr, uint16_t port) {
     RemoteConData prop;
     struct FileInfo fi;
     fi.size = buf_size;
-    const string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;  // e.g. "10.0.0.1:/home/user/001.log"
+    const string file_identifier =
+        QueuePairFactory::getIpAddress() + ":" + filename;  // e.g. "10.0.0.1:/home/user/001.log"
     strcpy(fi.file_id, file_identifier.c_str());
     prop.qp = qp_factory->connectToRemoteHost(host_addr.c_str(), port, &fi, sizeof(fi), &(prop.socket));
     LOG(INFO) << host_addr << " connected";
@@ -226,6 +237,7 @@ string CSLClient::replacePeer(string &old_addr) {
     }
 
     for (i = 0; i < peerv.count; i++) {
+        // For now we don't allow replace with the same peer even though it comes back
         if ((peers.find(peerv.data[i]) == peers.end()) && (old_addr.compare(peerv.data[i]) == 0)) {
             new_addr = peerv.data[i];  // find a new peer different from current peers
             break;
@@ -270,6 +282,9 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
               << " state: " << state2String(state) << " path: " << path;
     if (state == ZOO_CONNECTED_STATE) {
         if (type == ZOO_DELETED_EVENT) {
+            const auto start = chrono::high_resolution_clock::now();
+
+            cli->rep_factor -= 1;
             string peer, new_peer;
             stringstream pathss(path);
             // node path: /servers/<peer>
@@ -280,7 +295,11 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
                 LOG(ERROR) << "replacement failed";
                 return;
             }
-            cli->recoverPeer(new_peer);
+            if (cli->recoverPeer(new_peer)) cli->rep_factor += 1;
+
+            const auto end = chrono::high_resolution_clock::now();
+            LOG(INFO) << "Replace and recover a peer takes "
+                      << chrono::duration_cast<chrono::microseconds>(end - start).count() << "us";
         }
     }
 }

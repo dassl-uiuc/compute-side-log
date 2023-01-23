@@ -23,6 +23,8 @@
 #include <set>
 #include <unordered_map>
 
+#include "../csl_config.h"
+
 using namespace std;
 
 class CSLClient {
@@ -40,6 +42,7 @@ class CSLClient {
     set<string> peers;
     infinity::memory::Buffer *buffer;
 
+    int rep_factor;
     void *mem;
     size_t buf_size;
     atomic<size_t> buf_offset;
@@ -52,16 +55,17 @@ class CSLClient {
 
    public:
     CSLClient() = default;
-    CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id = 0, const char *filename="");
-    CSLClient(string mgr_hosts, size_t buf_size, uint32_t id=0, const char *filename="");
+    CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id = 0, const char *filename = "");
+    CSLClient(string mgr_hosts, size_t buf_size, uint32_t id = 0,
+              const char *filename = "", int rep_num = DEFAULT_REP_FACTOR);
     ~CSLClient();
 
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
     void ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
     void Append(const void *buf, uint32_t size);
-    
+
     void *GetBufData() { return buffer->getData(); }
-    
+
     /**
      * Reset the client to unuse state
      */
@@ -88,6 +92,11 @@ class CSLClient {
    private:
     void init(set<string> host_addresses, uint16_t port);
     void createClientZKNode();
+
+    /**
+     * @return number of peers already exists for this client. If this is the first time the client
+     * connects to ZK, 0 will be returned
+     */
     int getPeersFromZK(set<string> &peer_ips);
     /**
      * Remove a replication peer from the client and add a new replication peer
