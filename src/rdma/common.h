@@ -9,14 +9,17 @@
 
 #include <stddef.h>
 
-#define CLOSE_FILE 1
+#define OPEN_FILE   1
+#define CLOSE_FILE  2
+
+#define MAX_FILE_ID_LENGTH 512
 
 struct FileInfo {
     size_t size;
-    char file_id[512];
+    char file_id[MAX_FILE_ID_LENGTH];
 }__attribute__((packed));
 
 struct ClientReq {
     int type;
-    char file_id[512];
+    FileInfo fi;
 }__attribute__((packed));
