@@ -34,6 +34,13 @@ int main(int argc, char *argv[]) {
     auto elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     std::cout << "total: " << elapse << "us, average: " << static_cast<double>(elapse) / i << "us" << std::endl;
 
-    delete buf;
     close(fd);
+
+    fd = open("test2.txt", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_CSL, 0644);
+    if (fd < 0) {
+        std::cerr << "open file failed";
+    }
+    sleep(3);
+    close(fd);
+    delete buf;
 }

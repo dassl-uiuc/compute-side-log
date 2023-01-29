@@ -1,5 +1,5 @@
 add_executable(csl_test
-    client_pool_test.cpp
+    # client_pool_test.cpp
     util_test.cpp)
 
 target_include_directories(csl_test

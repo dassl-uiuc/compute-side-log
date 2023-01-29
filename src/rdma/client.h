@@ -19,14 +19,14 @@
 #include <infinity/queues/QueuePairFactory.h>
 #include <zookeeper/zookeeper.h>
 
+#include <memory>
 #include <mutex>
 #include <set>
 #include <unordered_map>
-#include <memory>
 
 #include "../csl_config.h"
-#include "qp_pool.h"
 #include "mr_pool.h"
+#include "qp_pool.h"
 
 using namespace std;
 
@@ -59,9 +59,10 @@ class CSLClient {
 
    public:
     CSLClient() = default;
-    CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, set<string> host_addresses, size_t buf_size, uint32_t id = 0, const char *filename = "");
-    CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, string mgr_hosts, size_t buf_size, uint32_t id = 0,
-              const char *filename = "", int rep_num = DEFAULT_REP_FACTOR);
+    CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, set<string> host_addresses, size_t buf_size,
+              uint32_t id = 0, const char *filename = "");
+    CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, string mgr_hosts, size_t buf_size,
+              uint32_t id = 0, const char *filename = "", int rep_num = DEFAULT_REP_FACTOR);
     ~CSLClient();
 
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
@@ -86,12 +87,24 @@ class CSLClient {
      */
     void SendFinalization();
 
+    /**
+     * If buffer of a greater size is needed, recycle the buffer and get a new buffer from MR pool
+     * @param size size of the new buffer needed
+     */
     void ReplaceBuffer(size_t size);
+
+    /**
+     * Set file info locally, sync file info with each replication server (fileid, size), and
+     * get back MR region token from each replication server. Called at each file openning.
+     *
+     * @param name name of the (new) file
+     * @param size max possible size of the (new) file
+     */
+    void SetFileInfo(const char *name, size_t size);
 
     const set<string> &GetPeers() { return peers; }
     size_t GetBufSize() { return buf_size; }
     void SetInUse(bool is_inuse) { in_use = is_inuse; }
-    void SetFilename(const char *name);
     uint32_t GetId() { return id; }
 
    private:

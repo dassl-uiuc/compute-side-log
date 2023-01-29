@@ -31,14 +31,14 @@ class CSLServer {
     struct LocalConData {
         shared_ptr<infinity::queues::QueuePair> qp;
         shared_ptr<infinity::memory::Buffer> buffer;
-        infinity::memory::RegionToken *buffer_token;
+        shared_ptr<infinity::memory::RegionToken> buffer_token;
         int socket;
     };
 
    private:
     infinity::core::Context *context;
     infinity::queues::QueuePairFactory *qp_factory;
-    set<shared_ptr<infinity::queues::QueuePair> > existing_qps;  // prevent QPs from being automatically freed
+    unordered_map<int, shared_ptr<infinity::queues::QueuePair> > existing_qps;  // prevent QPs from being automatically freed
     unique_ptr<NCLMrPool> mr_pool;
     unordered_map<string, LocalConData> local_cons;
     zhandle_t *zh;

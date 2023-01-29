@@ -13,6 +13,7 @@
 
 #include "common.h"
 
+using infinity::memory::RegionToken;
 using infinity::queues::QueuePair;
 using infinity::queues::QueuePairFactory;
 
@@ -69,10 +70,10 @@ void CSLServer::Run() {
         FD_ZERO(&fds);
         FD_SET(listen_fd, &fds);
         max_fd = listen_fd;
-        for (auto &c : local_cons) {
-            if (c.second.socket > 0) {
-                max_fd = max(max_fd, c.second.socket);  // find the max of all active fds
-                FD_SET(c.second.socket, &fds);
+        for (auto &qp : existing_qps) {
+            if (qp.first > 0) {
+                max_fd = max(max_fd, qp.first);  // find the max of all active fds
+                FD_SET(qp.first, &fds);
             }
         }
 
@@ -87,12 +88,16 @@ void CSLServer::Run() {
                 handleIncomingConnection();
             }
             // then check for client requests
-            for (auto &c : local_cons) {
-                if (c.second.socket > 0 && FD_ISSET(c.second.socket, &fds)) {
-                    FD_CLR(c.second.socket, &fds);
-                    ret = handleClientRequest(c.second.socket);
-                    if (ret == 0) c.second.socket = -1;  // prevent triggerring select again
+            for (auto qp = existing_qps.begin(); qp != existing_qps.end();) {
+                if (qp->first > 0 && FD_ISSET(qp->first, &fds)) {
+                    FD_CLR(qp->first, &fds);
+                    ret = handleClientRequest(qp->first);
+                    if (ret == 0) {
+                        existing_qps.erase(qp++);  // connection has been terminated, prevent triggerring select again
+                        continue;
+                    }
                 }
+                ++qp;
             }
         } else {
             continue;
@@ -124,11 +129,11 @@ void CSLServer::handleIncomingConnection() {
         con.socket = socket;
         con.buffer = mr_pool->GetMRofSize(fi.size);
         memset(con.buffer->getData(), 0, con.buffer->getSizeInBytes());
-        con.buffer_token = con.buffer->createRegionToken();
+        con.buffer_token = shared_ptr<RegionToken>(con.buffer->createRegionToken());
 
         con.qp = shared_ptr<QueuePair>(
-            qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token))));
-        existing_qps.insert(con.qp);
+            qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token.get(), sizeof(*(con.buffer_token))));
+        existing_qps.insert(make_pair(con.qp->getRemoteSocket(), con.qp));
         local_cons.insert(make_pair(file_id, con));
         // conn_cnt++;
     } else {
@@ -140,9 +145,10 @@ void CSLServer::handleIncomingConnection() {
         LocalConData &con = it->second;
         con.socket = socket;
         // delete old QP as it has been disconnected
-        existing_qps.erase(con.qp);  // ? how to reuse a qp if it's disconnected?
-        con.qp = shared_ptr<QueuePair>(qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token))));
-        existing_qps.insert(con.qp);
+        existing_qps.erase(con.qp->getRemoteSocket());  // ? how to reuse a qp if it's disconnected?
+        con.qp = shared_ptr<QueuePair>(
+            qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token.get(), sizeof(*(con.buffer_token))));
+        existing_qps.insert(make_pair(con.qp->getRemoteSocket(), con.qp));
     }
     LOG(INFO) << "Connection accepted, total: " << GetConnectionCount();
 }
@@ -158,9 +164,26 @@ int CSLServer::handleClientRequest(int socket) {
 
     string file_id(req.fi.file_id);
     auto it = local_cons.find(file_id);
+    auto it_qp = existing_qps.find(socket);
+    LocalConData new_con;
     switch (req.type) {
         case OPEN_FILE:
-            send(it->second.qp->getRemoteSocket(), it->second.buffer_token, sizeof(infinity::memory::RegionToken), 0);
+            if (it != local_cons.end()) {
+                DLOG_ASSERT(socket == it->second.qp->getRemoteSocket()) << "socket unmatch";
+                send(it->second.qp->getRemoteSocket(), it->second.buffer_token.get(), sizeof(RegionToken), 0);
+            } else if (it_qp == existing_qps.end()) {
+                LOG(ERROR) << "Can't find the existing qp with the client";
+                break;
+            } else {
+                DLOG_ASSERT(socket == it_qp->second->getRemoteSocket()) << "socket unmatch";
+                new_con.qp = it_qp->second;
+                new_con.buffer = mr_pool->GetMRofSize(req.fi.size);
+                new_con.buffer_token = shared_ptr<RegionToken>(new_con.buffer->createRegionToken());
+                new_con.socket = socket;
+                local_cons.insert(make_pair(file_id, new_con));
+                send(socket, new_con.buffer_token.get(), sizeof(RegionToken), 0);
+            }
+
             break;
         case CLOSE_FILE:
             if (it == local_cons.end()) {
@@ -169,7 +192,7 @@ int CSLServer::handleClientRequest(int socket) {
             }
             finalizeConData(it->second);
             local_cons.erase(it);
-            LOG(INFO) << "File: " << file_id << " finalized";
+            LOG(INFO) << "File: " << file_id << " finalized, return v " << ret;
             break;
         default:
             LOG(ERROR) << "Unknown request type" << req.type;

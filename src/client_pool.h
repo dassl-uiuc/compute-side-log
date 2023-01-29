@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <infinity/core/Context.h>
+
 #include <algorithm>
 #include <map>
 #include <memory>
@@ -14,7 +16,9 @@
 #include <set>
 #include <string>
 
+#include "csl_config.h"
 #include "rdma/client.h"
+#include "rdma/qp_pool.h"
 
 using namespace std;
 
@@ -23,37 +27,21 @@ class CSLClientPool {
     map<uint32_t, shared_ptr<CSLClient> > idle_clients;
     map<uint32_t, shared_ptr<CSLClient> > busy_clients;
     uint32_t global_id;
+    const string mgr_hosts;
+
+    Context *context;
+    shared_ptr<NCLQpPool> qp_pool;
+    shared_ptr<NCLMrPool> mr_pool;
 
     mutex lock;
 
    public:
-    CSLClientPool() : global_id(0) {}
+    CSLClientPool(string mgr_hosts = ZK_DEFAULT_HOST);
 
-    template <typename Client = CSLClient>
-    shared_ptr<CSLClient> GetClient(set<string> host_address, uint16_t port, size_t buf_size, const char *filename="") {
-        lock_guard<mutex> guard(lock);
+    shared_ptr<CSLClient> GetClient(set<string> host_address, size_t buf_size, const char *filename = "");
 
-        auto it_cli = find_if(idle_clients.begin(), idle_clients.end(),
-                              [&](const pair<uint32_t, shared_ptr<CSLClient> > &c) -> bool {
-                                  return (c.second->GetPeers() == host_address) && (c.second->GetBufSize() >= buf_size);
-                              });
+    shared_ptr<CSLClient> GetClient(size_t buf_size, const char *filename);
 
-        shared_ptr<CSLClient> cli;
-        uint32_t cli_id;
-        if (it_cli == idle_clients.end()) {
-            cli_id = global_id++;
-            cli = busy_clients.insert(make_pair(cli_id, make_shared<Client>(host_address, port, buf_size, cli_id, filename)))
-                      .first->second;
-        } else {
-            cli_id = it_cli->first;
-            cli = it_cli->second;
-            cli->SetFilename(filename);
-            idle_clients.erase(it_cli);
-            busy_clients.insert(make_pair(cli_id, cli));
-        }
-        cli->SetInUse(true);
-        return cli;
-    }
     void RecycleClient(uint32_t client_id);
     int GetIdleCliCnt() { return idle_clients.size(); }
     int GetBusyCliCnt() { return busy_clients.size(); }

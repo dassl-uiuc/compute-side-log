@@ -77,7 +77,7 @@ void CSLClient::init(set<string> host_addresses) {
     }
 
     LOG(INFO) << "Creating buffers";
-    buffer =  mr_pool->GetMRofSize(buf_size);
+    buffer = mr_pool->GetMRofSize(buf_size);
     LOG(INFO) << "csl client " << id << " created, buffer size " << buf_size;
 }
 
@@ -85,7 +85,7 @@ int CSLClient::getPeersFromZK(set<string> &peer_ips) {
     int ret, buf_len = 512;
     string node_path = ZK_CLI_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
     char peers_buf[512];
-    ret = zoo_get(zh, node_path.c_str(), 1, peers_buf, &buf_len, nullptr);
+    ret = zoo_get(zh, node_path.c_str(), 0, peers_buf, &buf_len, nullptr);
     if (ret) {  // client node doesn't exist, get peer ip from /servers
         if (ret != ZNONODE) {
             LOG(ERROR) << "Failed to get zk node " << node_path << ", errno: " << ret;
@@ -144,9 +144,13 @@ void CSLClient::createClientZKNode() {
 }
 
 CSLClient::~CSLClient() {
+    int ret;
     if (zh) {
         string node_path = ZK_CLI_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
-        zoo_delete(zh, node_path.c_str(), -1);
+        ret = zoo_delete(zh, node_path.c_str(), -1);
+        if (ret) {
+            LOG(ERROR) << "Failed to delete znode: " << node_path << ", errorno: " << ret;
+        }
         zookeeper_close(zh);
     }
     if (buffer) mr_pool->RecycleMR(buffer);
@@ -188,9 +192,9 @@ void CSLClient::Reset() {
     double usage = buf_offset.load() / 1024.0 / 1024.0;
     buf_offset.store(0);
     SetInUse(false);
-    filename.clear();
     SendFinalization();
-    LOG(INFO) << "csl client " << id << "recycled, MR usage: " << usage << "MB";
+    filename.clear();
+    LOG(INFO) << "csl client " << id << " recycled, MR usage: " << usage << "MB";
 }
 
 bool CSLClient::AddPeer(const string &host_addr) {
@@ -268,7 +272,8 @@ bool CSLClient::recoverPeer(string &new_peer) {
     lock_guard<mutex> guard(recover_lock);
     auto token = make_shared<infinity::requests::RequestToken>(context);
     auto &p = remote_props[new_peer];
-    p.qp->write(buffer.get(), 0, p.remote_buffer_token, 0, buf_offset.load(), token.get());  // ? need mannual segmentation?
+    p.qp->write(buffer.get(), 0, p.remote_buffer_token, 0, buf_offset.load(),
+                token.get());  // ? need mannual segmentation?
     token->waitUntilCompleted();
     return true;
 }
@@ -285,15 +290,25 @@ void CSLClient::SendFinalization() {
 }
 
 void CSLClient::ReplaceBuffer(size_t size) {
-    if (size <= buffer->getSizeInBytes())
-        return;
+    if (size <= buffer->getSizeInBytes()) return;
     mr_pool->RecycleMR(buffer);
     buffer = mr_pool->GetMRofSize(size);
 }
 
-void CSLClient::SetFilename(const char *name) {
-    // TODO: sync with each replication server
+void CSLClient::SetFileInfo(const char *name, size_t size) {
     filename = name;
+    buf_size = size;
+    const string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;
+    ClientReq open_req;
+    open_req.type = OPEN_FILE;
+    open_req.fi.size = size;
+    strcpy(open_req.fi.file_id, file_identifier.c_str());
+    for (auto &c : remote_props) {
+        send(c.second.qp->getRemoteSocket(), &open_req, sizeof(open_req), 0);
+    }
+    for (auto &c : remote_props) {
+        recv(c.second.qp->getRemoteSocket(), c.second.qp->getUserData(), sizeof(RegionToken), 0);
+    }
 }
 
 void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx) {
