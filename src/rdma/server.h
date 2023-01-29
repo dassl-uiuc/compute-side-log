@@ -22,14 +22,15 @@
 #include <zookeeper/zookeeper.h>
 
 #include "../csl_config.h"
+#include "mr_pool.h"
 
 using namespace std;
 
 class CSLServer {
     friend void ServerWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
     struct LocalConData {
-        infinity::queues::QueuePair *qp;
-        infinity::memory::Buffer *buffer;
+        shared_ptr<infinity::queues::QueuePair> qp;
+        shared_ptr<infinity::memory::Buffer> buffer;
         infinity::memory::RegionToken *buffer_token;
         int socket;
     };
@@ -37,6 +38,8 @@ class CSLServer {
    private:
     infinity::core::Context *context;
     infinity::queues::QueuePairFactory *qp_factory;
+    set<shared_ptr<infinity::queues::QueuePair> > existing_qps;  // prevent QPs from being automatically freed
+    unique_ptr<NCLMrPool> mr_pool;
     unordered_map<string, LocalConData> local_cons;
     zhandle_t *zh;
 

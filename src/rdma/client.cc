@@ -19,19 +19,31 @@
 
 using infinity::queues::QueuePairFactory;
 
-CSLClient::CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id, const char *name)
-    : rep_factor(host_addresses.size()),
+CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, set<string> host_addresses,
+                     size_t buf_size, uint32_t id, const char *name)
+    : qp_pool(qp_pool),
+      mr_pool(mr_pool),
+      rep_factor(host_addresses.size()),
       buf_size(buf_size),
       buf_offset(0),
       in_use(false),
       id(id),
       filename(name),
       zh(nullptr) {
-    init(host_addresses, port);
+    init(host_addresses);
 }
 
-CSLClient::CSLClient(string mgr_hosts, size_t buf_size, uint32_t id, const char *name, int rep_num)
-    : rep_factor(rep_num), buf_size(buf_size), buf_offset(0), in_use(false), id(id), filename(name), zh(nullptr) {
+CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, string mgr_hosts, size_t buf_size,
+                     uint32_t id, const char *name, int rep_num)
+    : qp_pool(qp_pool),
+      mr_pool(mr_pool),
+      rep_factor(rep_num),
+      buf_size(buf_size),
+      buf_offset(0),
+      in_use(false),
+      id(id),
+      filename(name),
+      zh(nullptr) {
     int ret, n_peers;
     zh = zookeeper_init(mgr_hosts.c_str(), ClientWatcher, 10000, 0, this, 0);
     if (!zh) {
@@ -42,7 +54,7 @@ CSLClient::CSLClient(string mgr_hosts, size_t buf_size, uint32_t id, const char 
     set<string> host_addresses;
     n_peers = getPeersFromZK(host_addresses);  // check if client node has been created before
 
-    init(host_addresses, PORT);
+    init(host_addresses);
 
     for (auto &p : peers) {
         string peer_path = ZK_SVR_ROOT_PATH + "/" + p;
@@ -56,19 +68,16 @@ CSLClient::CSLClient(string mgr_hosts, size_t buf_size, uint32_t id, const char 
     if (n_peers == 0) createClientZKNode();  // node doesn't exist, need to create client ZK node
 }
 
-void CSLClient::init(set<string> host_addresses, uint16_t port) {
-    context = new infinity::core::Context(0, 1);
-    qp_factory = new infinity::queues::QueuePairFactory(context);
+void CSLClient::init(set<string> host_addresses) {
+    //  context and qp_factory construction moved outside
+    context = qp_pool->GetContext();
 
     for (auto &addr : host_addresses) {
-        AddPeer(addr, port);
+        AddPeer(addr);
     }
 
     LOG(INFO) << "Creating buffers";
-    if (posix_memalign(&(mem), infinity::core::Configuration::PAGE_SIZE, buf_size)) {
-        LOG(FATAL) << "Cannot allocate and align buffer.";
-    }
-    buffer = new infinity::memory::Buffer(context, mem, buf_size);
+    buffer =  mr_pool->GetMRofSize(buf_size);
     LOG(INFO) << "csl client " << id << " created, buffer size " << buf_size;
 }
 
@@ -140,19 +149,16 @@ CSLClient::~CSLClient() {
         zoo_delete(zh, node_path.c_str(), -1);
         zookeeper_close(zh);
     }
-    if (buffer) delete buffer;
+    if (buffer) mr_pool->RecycleMR(buffer);
     for (auto &p : remote_props) {
-        if (p.second.qp) delete p.second.qp;
-        if (p.second.socket >= 0) close(p.second.socket);
+        qp_pool->RecycleQp(p.second.qp);
     }
-    if (qp_factory) delete qp_factory;
-    if (context) delete context;
 }
 
 void CSLClient::ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
     infinity::requests::RequestToken request_token(context);
     RemoteConData &prop = remote_props.begin()->second;
-    prop.qp->read(buffer, local_off, prop.remote_buffer_token, remote_off, size, &request_token);
+    prop.qp->read(buffer.get(), local_off, prop.remote_buffer_token, remote_off, size, &request_token);
     request_token.waitUntilCompleted();
 }
 
@@ -161,7 +167,7 @@ void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size
     for (auto &p : remote_props) {
         auto token = make_shared<infinity::requests::RequestToken>(context);
         request_tokens.emplace_back(token);
-        p.second.qp->write(buffer, local_off, p.second.remote_buffer_token, remote_off, size, token.get());
+        p.second.qp->write(buffer.get(), local_off, p.second.remote_buffer_token, remote_off, size, token.get());
     }
 
     for (auto token : request_tokens) {
@@ -173,12 +179,12 @@ void CSLClient::Append(const void *buf, uint32_t size) {
     // disable new append during recovering
     lock_guard<mutex> guard(recover_lock);  // TODO: enable async recovery
     size_t cur_off = buf_offset.fetch_add(size);
-    memcpy((char *)mem + cur_off, buf, size);
+    memcpy((char *)buffer->getAddress() + cur_off, buf, size);
     WriteSync(cur_off, cur_off, size);
 }
 
 void CSLClient::Reset() {
-    memset(mem, 0, buf_size);
+    memset((void *)buffer->getAddress(), 0, buf_size);
     double usage = buf_offset.load() / 1024.0 / 1024.0;
     buf_offset.store(0);
     SetInUse(false);
@@ -187,7 +193,7 @@ void CSLClient::Reset() {
     LOG(INFO) << "csl client " << id << "recycled, MR usage: " << usage << "MB";
 }
 
-bool CSLClient::AddPeer(const string &host_addr, uint16_t port) {
+bool CSLClient::AddPeer(const string &host_addr) {
     if (peers.find(host_addr) != peers.end()) {
         LOG(ERROR) << "Peer " << host_addr << " already connected.";
         return false;
@@ -200,7 +206,8 @@ bool CSLClient::AddPeer(const string &host_addr, uint16_t port) {
     const string file_identifier =
         QueuePairFactory::getIpAddress() + ":" + filename;  // e.g. "10.0.0.1:/home/user/001.log"
     strcpy(fi.file_id, file_identifier.c_str());
-    prop.qp = qp_factory->connectToRemoteHost(host_addr.c_str(), port, &fi, sizeof(fi), &(prop.socket));
+    prop.qp = qp_pool->GetQpTo(host_addr, &fi);
+    prop.socket = prop.qp->getRemoteSocket();
     LOG(INFO) << host_addr << " connected";
     prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
     remote_props[host_addr] = prop;
@@ -221,7 +228,8 @@ string CSLClient::replacePeer(string &old_addr) {
         return "";
     }
 
-    delete it->second.qp;
+    // qp_pool->RecycleQp(it->second.qp);
+    // drop qp and not recycle since it's disconnected ? can we recycle it?
     remote_props.erase(it);
     peers.erase(old_addr);
     LOG(INFO) << "Client " << id << " removes peer " << old_addr;
@@ -248,7 +256,7 @@ string CSLClient::replacePeer(string &old_addr) {
         return "";
     }
 
-    if (AddPeer(new_addr, PORT)) {
+    if (AddPeer(new_addr)) {
         LOG(INFO) << "Replaced old peer " << old_addr << " with new peer " << new_addr;
         return new_addr;
     } else {
@@ -260,7 +268,7 @@ bool CSLClient::recoverPeer(string &new_peer) {
     lock_guard<mutex> guard(recover_lock);
     auto token = make_shared<infinity::requests::RequestToken>(context);
     auto &p = remote_props[new_peer];
-    p.qp->write(buffer, 0, p.remote_buffer_token, 0, buf_offset.load(), token.get());  // ? need mannual segmentation?
+    p.qp->write(buffer.get(), 0, p.remote_buffer_token, 0, buf_offset.load(), token.get());  // ? need mannual segmentation?
     token->waitUntilCompleted();
     return true;
 }
@@ -268,12 +276,24 @@ bool CSLClient::recoverPeer(string &new_peer) {
 void CSLClient::SendFinalization() {
     ClientReq req;
     const string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;
-    strcpy(req.file_id, file_identifier.c_str());
+    strcpy(req.fi.file_id, file_identifier.c_str());
     req.type = CLOSE_FILE;
 
     for (auto &p : remote_props) {
         send(p.second.socket, &req, sizeof(req), 0);
     }
+}
+
+void CSLClient::ReplaceBuffer(size_t size) {
+    if (size <= buffer->getSizeInBytes())
+        return;
+    mr_pool->RecycleMR(buffer);
+    buffer = mr_pool->GetMRofSize(size);
+}
+
+void CSLClient::SetFilename(const char *name) {
+    // TODO: sync with each replication server
+    filename = name;
 }
 
 void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx) {

@@ -1,4 +1,4 @@
-# compute-side-log
+# Near-Compute-Log (compute-side-log)
 
 ## Get
 ```bash

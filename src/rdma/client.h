@@ -22,28 +22,32 @@
 #include <mutex>
 #include <set>
 #include <unordered_map>
+#include <memory>
 
 #include "../csl_config.h"
+#include "qp_pool.h"
+#include "mr_pool.h"
 
 using namespace std;
 
 class CSLClient {
     friend void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
     struct RemoteConData {
-        infinity::queues::QueuePair *qp;
+        shared_ptr<infinity::queues::QueuePair> qp;
         infinity::memory::RegionToken *remote_buffer_token;
         int socket;
     };
 
    protected:
     infinity::core::Context *context;
-    infinity::queues::QueuePairFactory *qp_factory;
+    // infinity::queues::QueuePairFactory *qp_factory;
+    shared_ptr<NCLQpPool> qp_pool;
+    shared_ptr<NCLMrPool> mr_pool;
     unordered_map<string, RemoteConData> remote_props;
     set<string> peers;
-    infinity::memory::Buffer *buffer;
+    shared_ptr<infinity::memory::Buffer> buffer;
 
     int rep_factor;
-    void *mem;
     size_t buf_size;
     atomic<size_t> buf_offset;
     bool in_use;
@@ -55,8 +59,8 @@ class CSLClient {
 
    public:
     CSLClient() = default;
-    CSLClient(set<string> host_addresses, uint16_t port, size_t buf_size, uint32_t id = 0, const char *filename = "");
-    CSLClient(string mgr_hosts, size_t buf_size, uint32_t id = 0,
+    CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, set<string> host_addresses, size_t buf_size, uint32_t id = 0, const char *filename = "");
+    CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, string mgr_hosts, size_t buf_size, uint32_t id = 0,
               const char *filename = "", int rep_num = DEFAULT_REP_FACTOR);
     ~CSLClient();
 
@@ -74,23 +78,24 @@ class CSLClient {
     /**
      * Connect to a replication peer
      * @param host_addr address of the peer
-     * @param port port of the peer
      */
-    bool AddPeer(const string &host_addr, uint16_t port);
+    bool AddPeer(const string &host_addr);
 
     /**
      * Send finalization request to peers to clean state on server
      */
     void SendFinalization();
 
+    void ReplaceBuffer(size_t size);
+
     const set<string> &GetPeers() { return peers; }
     size_t GetBufSize() { return buf_size; }
     void SetInUse(bool is_inuse) { in_use = is_inuse; }
-    void SetFilename(const char *name) { filename = name; }
+    void SetFilename(const char *name);
     uint32_t GetId() { return id; }
 
    private:
-    void init(set<string> host_addresses, uint16_t port);
+    void init(set<string> host_addresses);
     void createClientZKNode();
 
     /**

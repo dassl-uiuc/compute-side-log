@@ -13,11 +13,13 @@
 
 #include "common.h"
 
+using infinity::queues::QueuePair;
 using infinity::queues::QueuePairFactory;
 
 CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts) : buf_size(buf_size), stop(false) {
     context = new infinity::core::Context(0, 1);
-    qp_factory = new infinity::queues::QueuePairFactory(context);
+    qp_factory = new QueuePairFactory(context);
+    mr_pool = make_unique<NCLMrPool>(context);
     int ret;
 
     LOG(INFO) << "Setting up connection (blocking)" << endl;
@@ -89,8 +91,7 @@ void CSLServer::Run() {
                 if (c.second.socket > 0 && FD_ISSET(c.second.socket, &fds)) {
                     FD_CLR(c.second.socket, &fds);
                     ret = handleClientRequest(c.second.socket);
-                    if (ret == 0)
-                        c.second.socket = -1;  // prevent triggerring select again
+                    if (ret == 0) c.second.socket = -1;  // prevent triggerring select again
                 }
             }
         } else {
@@ -121,21 +122,27 @@ void CSLServer::handleIncomingConnection() {
         LOG(INFO) << "Create new MR and qp";
         LocalConData con;
         con.socket = socket;
-        con.buffer = new infinity::memory::Buffer(context, fi.size);
+        con.buffer = mr_pool->GetMRofSize(fi.size);
         memset(con.buffer->getData(), 0, con.buffer->getSizeInBytes());
         con.buffer_token = con.buffer->createRegionToken();
 
-        con.qp =
-            qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)), false);
+        con.qp = shared_ptr<QueuePair>(
+            qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token))));
+        existing_qps.insert(con.qp);
         local_cons.insert(make_pair(file_id, con));
         // conn_cnt++;
     } else {
+        /*
+         * MR and QP has already been created and not freed/recycled
+         * Client may disconnect abnormally
+         */
         LOG(INFO) << "Reuse exist MR and recreate qp";
         LocalConData &con = it->second;
         con.socket = socket;
-        // delete old QP
-        delete con.qp; // ? is this needed?
-        con.qp = qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token)));
+        // delete old QP as it has been disconnected
+        existing_qps.erase(con.qp);  // ? how to reuse a qp if it's disconnected?
+        con.qp = shared_ptr<QueuePair>(qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token, sizeof(*(con.buffer_token))));
+        existing_qps.insert(con.qp);
     }
     LOG(INFO) << "Connection accepted, total: " << GetConnectionCount();
 }
@@ -145,14 +152,16 @@ int CSLServer::handleClientRequest(int socket) {
     int ret;
 
     ret = recv(socket, &req, sizeof(req), 0);
-    if (ret <= 0)
-        return ret;
+    if (ret <= 0) return ret;
     DLOG_ASSERT(ret == sizeof(req)) << "Incorrect client request size, "
                                     << "expect " << sizeof(req) << " receive " << ret;
 
-    string file_id(req.file_id);
+    string file_id(req.fi.file_id);
     auto it = local_cons.find(file_id);
     switch (req.type) {
+        case OPEN_FILE:
+            send(it->second.qp->getRemoteSocket(), it->second.buffer_token, sizeof(infinity::memory::RegionToken), 0);
+            break;
         case CLOSE_FILE:
             if (it == local_cons.end()) {
                 LOG(ERROR) << "can't find file id: " << file_id;
@@ -171,9 +180,9 @@ int CSLServer::handleClientRequest(int socket) {
 }
 
 void CSLServer::finalizeConData(struct LocalConData &con) {
-    // * no resource reuse for now
-    delete con.qp;
-    delete con.buffer;
+    // * qp are never freed for now
+    // delete con.qp;
+    mr_pool->RecycleMR(con.buffer);
 }
 
 vector<string> CSLServer::GetAllFileId() {
@@ -197,10 +206,10 @@ size_t CSLServer::findSize(const string &file_id) {
 
 CSLServer::~CSLServer() {
     if (zh) zookeeper_close(zh);
-    for (auto &c : local_cons) {
-        if (c.second.buffer) delete c.second.buffer;
-        if (c.second.qp) delete c.second.qp;
-    }
+    // for (auto &c : local_cons) {
+    //     if (c.second.buffer) delete c.second.buffer;
+    //     if (c.second.qp) delete c.second.qp;
+    // }
     if (qp_factory) delete qp_factory;
     if (context) delete context;
 }
