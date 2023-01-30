@@ -26,5 +26,6 @@ shared_ptr<Buffer> NCLMrPool::GetMRofSize(size_t size) {
 
 void NCLMrPool::RecycleMR(shared_ptr<Buffer> mr) {
     lock_guard<mutex> guard(lock);
+    mr->zero();
     free_mrs.insert(mr);
 }
