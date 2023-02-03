@@ -194,6 +194,20 @@ int CSLServer::handleClientRequest(int socket) {
             local_cons.erase(it);
             LOG(INFO) << "File: " << file_id << " finalized, return v " << ret;
             break;
+        case EXIT_PROC:
+            if (it == local_cons.end()) {
+                LOG(ERROR) << "can't find file id: " << file_id;
+            } else {
+                finalizeConData(it->second);
+                local_cons.erase(it);
+            }
+            if (it_qp == existing_qps.end()) {
+                LOG(ERROR) << "can't find QP with socket: " << socket;
+                break;
+            }
+            existing_qps.erase(it_qp);
+            LOG(INFO) << "File: " << file_id << " finalized with QP (socket=" << socket << ") destroyed";
+            break;
         default:
             LOG(ERROR) << "Unknown request type" << req.type;
             break;

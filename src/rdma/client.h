@@ -102,8 +102,11 @@ class CSLClient {
 
     /**
      * Send finalization request to peers to clean state on server
+     * @param type type of finalization
+     * close file: server will preserve the QP for future use
+     * exit process: server will destroy the QP
      */
-    void SendFinalization();
+    void SendFinalization(int type=CLOSE_FILE);
 
     /**
      * If buffer of a greater size is needed, recycle the buffer and get a new buffer from MR pool

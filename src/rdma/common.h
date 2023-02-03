@@ -11,6 +11,7 @@
 
 #define OPEN_FILE   1
 #define CLOSE_FILE  2
+#define EXIT_PROC   3
 
 #define MAX_FILE_ID_LENGTH 512
 

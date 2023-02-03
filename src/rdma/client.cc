@@ -145,6 +145,9 @@ void CSLClient::createClientZKNode() {
 
 CSLClient::~CSLClient() {
     int ret;
+    if (in_use) {
+        SendFinalization(EXIT_PROC);  // destroy QP on server side
+    }
     if (zh) {
         string node_path = ZK_CLI_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
         ret = zoo_delete(zh, node_path.c_str(), -1);
@@ -288,13 +291,13 @@ bool CSLClient::recoverPeer(string &new_peer) {
     return true;
 }
 
-void CSLClient::SendFinalization() {
+void CSLClient::SendFinalization(int type) {
     if (!in_use)
         return;
     ClientReq req;
     const string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;
     strcpy(req.fi.file_id, file_identifier.c_str());
-    req.type = CLOSE_FILE;
+    req.type = type;
 
     for (auto &p : remote_props) {
         send(p.second.socket, &req, sizeof(req), 0);
