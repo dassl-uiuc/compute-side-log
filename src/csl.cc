@@ -18,28 +18,35 @@
 #include <unistd.h>
 
 #include <mutex>
+#include <string>
 #include <unordered_map>
 
 #include "client_pool.h"
 #include "csl_config.h"
 
 // #define CSL_DEBUG
+#define RECYCLE_ON_DELETE 0
 
 using original_open_t = int (*)(const char *, int, ...);
-using original_creat_t = int (*)(const char *, mode_t);
+// using original_creat_t = int (*)(const char *, mode_t);
 using original_openat_t = int (*)(int, const char *, int, ...);
 using original_write_t = ssize_t (*)(int, const void *, size_t);
 using original_close_t = int (*)(int);
 using original_read_t = ssize_t (*)(int, void *, size_t);
+using original_pread_t = ssize_t (*)(int, void *, size_t, off_t);
+using original_unlink_t = int (*)(const char *);
 
 static original_open_t original_open = reinterpret_cast<original_open_t>(dlsym(RTLD_NEXT, "open"));
-static original_creat_t original_creat = reinterpret_cast<original_creat_t>(dlsym(RTLD_NEXT, "creat"));
+// static original_creat_t original_creat = reinterpret_cast<original_creat_t>(dlsym(RTLD_NEXT, "creat"));
 static original_openat_t original_openat = reinterpret_cast<original_openat_t>(dlsym(RTLD_NEXT, "openat"));
 static original_write_t original_write = reinterpret_cast<original_write_t>(dlsym(RTLD_NEXT, "write"));
 static original_close_t original_close = reinterpret_cast<original_close_t>(dlsym(RTLD_NEXT, "close"));
 static original_read_t original_read = reinterpret_cast<original_read_t>(dlsym(RTLD_NEXT, "read"));
+static original_pread_t original_pread = reinterpret_cast<original_pread_t>(dlsym(RTLD_NEXT, "pread"));
+static original_unlink_t original_unlink = reinterpret_cast<original_unlink_t>(dlsym(RTLD_NEXT, "unlink"));
 
 static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
+static std::unordered_map<std::string, shared_ptr<CSLClient> > csl_path_cli;
 static std::mutex csl_lock;
 static CSLClientPool pool;
 
@@ -63,6 +70,9 @@ int open(const char *pathname, int flags, ...) {
         {
             std::lock_guard<std::mutex> lock(csl_lock);
             csl_fd_cli.insert(make_pair(fd, csl_client));
+#if RECYCLE_ON_DELETE
+            csl_path_cli.insert(make_pair(pathname, csl_client));
+#endif
         }
     }
 
@@ -70,13 +80,6 @@ int open(const char *pathname, int flags, ...) {
     printf("open path %s, flag 0x%x, mode 0%o\n", pathname, flags, mode);
 #endif
     return fd;
-}
-
-int creat(const char *pathname, mode_t mode) {
-#ifdef CSL_DEBUG
-    printf("creat path %s, mode 0%o\n", pathname, mode);
-#endif
-    return original_creat(pathname, mode);
 }
 
 int openat(int dirfd, const char *pathname, int flags, ...) {
@@ -128,8 +131,11 @@ int close(int fd) {
     std::lock_guard<std::mutex> lock(csl_lock);
     auto it = csl_fd_cli.find(fd);
     if (it != csl_fd_cli.end()) {
-        pool.RecycleClient(csl_fd_cli[fd]->GetId());  // TODO: put this to unlink
-        csl_fd_cli.erase(fd);
+#if RECYCLE_ON_DELETE
+#else
+        pool.RecycleClient(csl_fd_cli[fd]->GetId());
+#endif
+        csl_fd_cli.erase(it);
     }
     return original_close(fd);
 }
@@ -148,4 +154,15 @@ ssize_t read(int fd, void *buf, size_t count) {
         csl_lock.unlock();
         return original_read(fd, buf, count);
     }
+}
+
+int unlink(const char *pathname) {
+#if RECYCLE_ON_DELETE
+    auto it = csl_path_cli.find(pathname);
+    if (it != csl_path_cli.end()) {
+        pool.RecycleClient(it->second->GetId());
+        csl_path_cli.erase(it);
+    }
+#endif
+    return original_unlink(pathname);
 }

@@ -201,8 +201,8 @@ void CSLClient::Reset() {
     memset((void *)buffer->getAddress(), 0, buf_size);
     double usage = buf_offset.load() / 1024.0 / 1024.0;
     buf_offset.store(0);
-    SetInUse(false);
     SendFinalization();
+    SetInUse(false);
     filename.clear();
     LOG(INFO) << "csl client " << id << " recycled, MR usage: " << usage << "MB";
 }
@@ -289,6 +289,8 @@ bool CSLClient::recoverPeer(string &new_peer) {
 }
 
 void CSLClient::SendFinalization() {
+    if (!in_use)
+        return;
     ClientReq req;
     const string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;
     strcpy(req.fi.file_id, file_identifier.c_str());

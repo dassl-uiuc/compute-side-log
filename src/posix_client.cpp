@@ -30,6 +30,7 @@ int main(int argc, char *argv[]) {
         int ret = write(fd, buf, MSG_SIZE);
     }
     auto end = std::chrono::high_resolution_clock::now();
+    fdatasync(fd);
 
     auto elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     std::cout << "total: " << elapse << "us, average: " << static_cast<double>(elapse) / i << "us" << std::endl;
@@ -42,5 +43,8 @@ int main(int argc, char *argv[]) {
     }
     sleep(3);
     close(fd);
+
+    unlink("test.txt");
+    unlink("test2.txt");
     delete buf;
 }
