@@ -179,12 +179,22 @@ void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size
     }
 }
 
-void CSLClient::Append(const void *buf, uint32_t size) {
+ssize_t CSLClient::Append(const void *buf, size_t size) {
     // disable new append during recovering
     lock_guard<mutex> guard(recover_lock);  // TODO: enable async recovery
+    size = min(size, buffer->getSizeInBytes() - buf_offset);
     size_t cur_off = buf_offset.fetch_add(size);
     memcpy((char *)buffer->getAddress() + cur_off, buf, size);
     WriteSync(cur_off, cur_off, size);
+    return size;
+}
+
+ssize_t CSLClient::Read(void *buf, size_t size) {
+    // TODO: read from remote MR?
+    size = min(size, buffer->getSizeInBytes() - buf_offset);
+    size_t cur_off = buf_offset.fetch_add(size);
+    memcpy(buf, (char *)buffer->getAddress() + cur_off, size);
+    return size;
 }
 
 void CSLClient::Reset() {

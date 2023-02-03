@@ -67,7 +67,25 @@ class CSLClient {
 
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
     void ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
-    void Append(const void *buf, uint32_t size);
+
+    /**
+     * Append to the end of the log.
+     * Behavior of this call is expected to be consistent with glibc WRITE(2)
+     *
+     * @param buf pointer to the data to be appended
+     * @param size size of data to be appended
+     */
+    ssize_t Append(const void *buf, size_t size);
+
+    /**
+     * Read from the log.
+     * Behavior of this call is expected to be consistent with glibc READ(2)
+     *
+     * @param buf pointer to the returned data
+     * @param size size of data to be read
+     * @return actual size of data read
+     */
+    ssize_t Read(void *buf, size_t size);
 
     void *GetBufData() { return buffer->getData(); }
 

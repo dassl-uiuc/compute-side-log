@@ -30,12 +30,14 @@ using original_creat_t = int (*)(const char *, mode_t);
 using original_openat_t = int (*)(int, const char *, int, ...);
 using original_write_t = ssize_t (*)(int, const void *, size_t);
 using original_close_t = int (*)(int);
+using original_read_t = ssize_t (*)(int, void *, size_t);
 
 static original_open_t original_open = reinterpret_cast<original_open_t>(dlsym(RTLD_NEXT, "open"));
 static original_creat_t original_creat = reinterpret_cast<original_creat_t>(dlsym(RTLD_NEXT, "creat"));
 static original_openat_t original_openat = reinterpret_cast<original_openat_t>(dlsym(RTLD_NEXT, "openat"));
 static original_write_t original_write = reinterpret_cast<original_write_t>(dlsym(RTLD_NEXT, "write"));
 static original_close_t original_close = reinterpret_cast<original_close_t>(dlsym(RTLD_NEXT, "close"));
+static original_read_t original_read = reinterpret_cast<original_read_t>(dlsym(RTLD_NEXT, "read"));
 
 static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
 static std::mutex csl_lock;
@@ -113,21 +115,37 @@ ssize_t write(int fd, const void *buf, size_t count) {
         auto cli = it->second;
         csl_lock.unlock();
 #ifdef CSL_DEBUG
-        printf("compute side log, fd: %d\n", fd);
+        printf("compute side log write, fd: %d\n", fd);
 #endif
-        cli->Append(buf, count);
+        return cli->Append(buf, count);
     } else {
         csl_lock.unlock();
+        return original_write(fd, buf, count);
     }
-    return original_write(fd, buf, count);
 }
 
 int close(int fd) {
     std::lock_guard<std::mutex> lock(csl_lock);
     auto it = csl_fd_cli.find(fd);
     if (it != csl_fd_cli.end()) {
-        pool.RecycleClient(csl_fd_cli[fd]->GetId());
+        pool.RecycleClient(csl_fd_cli[fd]->GetId());  // TODO: put this to unlink
         csl_fd_cli.erase(fd);
     }
     return original_close(fd);
+}
+
+ssize_t read(int fd, void *buf, size_t count) {
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
+#ifdef CSL_DEBUG
+        printf("compute side log read, fd: %d\n", fd);
+#endif
+        return cli->Read(buf, count);
+    } else {
+        csl_lock.unlock();
+        return original_read(fd, buf, count);
+    }
 }
