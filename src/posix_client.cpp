@@ -12,11 +12,15 @@
 #include "csl_config.h"
 
 size_t MSG_SIZE = 154;
+char mode = 'w';
 
 int main(int argc, char *argv[]) {
     int i = 0;
     if (argc > 1) {
         MSG_SIZE = std::stoi(argv[1]);
+        if (argc > 2) {
+            mode = argv[2][0];
+        }
     }
     int fd = open("test.txt", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_CSL, 0644);
     if (fd < 0) {
@@ -35,16 +39,18 @@ int main(int argc, char *argv[]) {
     auto elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
     std::cout << "total: " << elapse << "us, average: " << static_cast<double>(elapse) / i << "us" << std::endl;
 
-    close(fd);
-
-    fd = open("test2.txt", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_CSL, 0644);
-    if (fd < 0) {
-        std::cerr << "open file failed";
+    if (mode == 'r') {
+        start = std::chrono::high_resolution_clock::now();
+        for (i = 0; i < MR_SIZE / MSG_SIZE; i++) {
+            int ret = read(fd, buf, MSG_SIZE);
+        }
+        end = std::chrono::high_resolution_clock::now();;
+        elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        std::cout << "total: " << elapse << "us, average: " << static_cast<double>(elapse) / i << "us" << std::endl;
     }
-    sleep(3);
+
     close(fd);
 
     unlink("test.txt");
-    unlink("test2.txt");
     delete buf;
 }
