@@ -4,7 +4,7 @@
 wget -O - https://apt.kitware.com/keys/kitware-archive-latest.asc 2>/dev/null | sudo apt-key add -
 sudo apt-add-repository 'deb https://apt.kitware.com/ubuntu/ bionic main'
 sudo apt-get update
-sudo apt-get install cmake libunwind-dev libgflags-dev -y
+sudo apt-get install cmake libunwind-dev libgflags-dev openjdk-11-jre-headless -y
 
 # install glog
 git clone https://github.com/google/glog.git ../glog

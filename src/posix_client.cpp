@@ -44,7 +44,7 @@ int main(int argc, char *argv[]) {
     sleep(3);
     close(fd);
 
-    // unlink("test.txt");
-    // unlink("test2.txt");
+    unlink("test.txt");
+    unlink("test2.txt");
     delete buf;
 }

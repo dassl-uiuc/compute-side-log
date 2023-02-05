@@ -128,15 +128,18 @@ ssize_t write(int fd, const void *buf, size_t count) {
 }
 
 int close(int fd) {
-    std::lock_guard<std::mutex> lock(csl_lock);
+    csl_lock.lock();
     auto it = csl_fd_cli.find(fd);
     if (it != csl_fd_cli.end()) {
+        csl_lock.unlock();
 #if RECYCLE_ON_DELETE
 #else
-        pool.RecycleClient(csl_fd_cli[fd]->GetId());
+        pool.RecycleClient(it->second->GetId());
 #endif
+        csl_lock.lock();
         csl_fd_cli.erase(it);
     }
+    csl_lock.unlock();
     return original_close(fd);
 }
 
