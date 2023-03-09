@@ -27,7 +27,8 @@ int main() {
         for (auto &f : all_files) {
             cout << "file " << f << endl;
             char *buf = (char *)server.GetBufData(f);
-            for (int j = 0; j < 128; j++) cout << buf[j];
+            for (int j = 0; j < 128; j++)
+                cout << buf[j];
             cout << endl;
         }
     }

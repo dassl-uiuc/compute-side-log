@@ -17,7 +17,7 @@ using infinity::memory::RegionToken;
 using infinity::queues::QueuePair;
 using infinity::queues::QueuePairFactory;
 
-CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts) : buf_size(buf_size), stop(false) {
+CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts) : stop(false) {
     context = new infinity::core::Context(0, 1);
     qp_factory = new QueuePairFactory(context);
     mr_pool = make_unique<NCLMrPool>(context);
@@ -166,13 +166,14 @@ int CSLServer::handleClientRequest(int socket) {
     auto it = local_cons.find(file_id);
     auto it_qp = existing_qps.find(socket);
     LocalConData new_con;
+    size_t size = 0;
     switch (req.type) {
         case OPEN_FILE:
             if (it != local_cons.end()) {
                 DLOG_ASSERT(socket == it->second.qp->getRemoteSocket()) << "socket unmatch";
                 send(it->second.qp->getRemoteSocket(), it->second.buffer_token.get(), sizeof(RegionToken), 0);
             } else if (it_qp == existing_qps.end()) {
-                LOG(ERROR) << "Can't find the existing qp with the client";
+                LOG(ERROR) << "[OPEN FILE] Can't find the existing qp with the client";
                 break;
             } else {
                 DLOG_ASSERT(socket == it_qp->second->getRemoteSocket()) << "socket unmatch";
@@ -187,26 +188,34 @@ int CSLServer::handleClientRequest(int socket) {
             break;
         case CLOSE_FILE:
             if (it == local_cons.end()) {
-                LOG(ERROR) << "can't find file id: " << file_id;
+                LOG(ERROR) << "[CLOSE FILE] can't find file id: " << file_id;
                 break;
             }
             finalizeConData(it->second);
             local_cons.erase(it);
-            LOG(INFO) << "File: " << file_id << " finalized, return v " << ret;
+            LOG(INFO) << "[CLOSE FILE] File: " << file_id << " finalized, return v " << ret;
             break;
         case EXIT_PROC:
             if (it == local_cons.end()) {
-                LOG(ERROR) << "can't find file id: " << file_id;
+                LOG(ERROR) << "[EXIT PROC] can't find file id: " << file_id;
             } else {
                 finalizeConData(it->second);
                 local_cons.erase(it);
             }
             if (it_qp == existing_qps.end()) {
-                LOG(ERROR) << "can't find QP with socket: " << socket;
+                LOG(ERROR) << "[EXIT PROC] can't find QP with socket: " << socket;
                 break;
             }
             existing_qps.erase(it_qp);
-            LOG(INFO) << "File: " << file_id << " finalized with QP (socket=" << socket << ") destroyed";
+            LOG(INFO) << "[EXIT PROC] File: " << file_id << " finalized with QP (socket=" << socket << ") destroyed";
+            break;
+        case GET_INFO:
+            if (it != local_cons.end()) {
+                size = findSize(file_id);
+            } else {
+                LOG(ERROR) << "[GET INFO] can't find file id: " << file_id;
+            }
+            send(it->second.qp->getRemoteSocket(), &size, sizeof(size), 0);
             break;
         default:
             LOG(ERROR) << "Unknown request type" << req.type;
@@ -232,13 +241,15 @@ vector<string> CSLServer::GetAllFileId() {
 
 size_t CSLServer::findSize(const string &file_id) {
     if (local_cons.find(file_id) == local_cons.end()) return 0;
-    char *mr_begin = reinterpret_cast<char *>(local_cons[file_id].buffer->getData());
-    char *buf = mr_begin + buf_size - 1;  // points to the end of the MR
+
+    auto &mr = local_cons[file_id].buffer;
+    char *mr_begin = reinterpret_cast<char *>(mr->getData());
+    char *buf = mr_begin + mr->getSizeInBytes() - 1;  // points to the end of the MR
     while (buf >= mr_begin) {
-        if (*buf == TAIL_MARKER) break;
+        if (*buf != 0) break;  // todo
         buf--;
     }
-    return buf - mr_begin;
+    return buf - mr_begin + 1;
 }
 
 CSLServer::~CSLServer() {

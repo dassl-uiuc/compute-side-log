@@ -43,7 +43,7 @@ class CSLServer {
     unordered_map<string, LocalConData> local_cons;
     zhandle_t *zh;
 
-    size_t buf_size;
+    // size_t buf_size;
     // int conn_cnt;
     bool stop;
 

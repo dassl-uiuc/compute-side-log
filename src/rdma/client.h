@@ -22,6 +22,7 @@
 #include <memory>
 #include <mutex>
 #include <set>
+#include <tuple>
 #include <unordered_map>
 
 #include "../csl_config.h"
@@ -150,6 +151,25 @@ class CSLClient {
      * @return true if recovery is successful
      */
     bool recoverPeer(string &new_addr);
+
+    /**
+     * Get the ip address of the replication server from which the client recover the lost data.
+     * Usually called after an client crash.
+     * @return ip address of replication server that serves as recover source and number of bytes to recover
+     */
+    tuple<string, size_t> getRecoverSrcPeer();
+
+    /**
+     * Get the lost data from a replication server
+     * 
+     * @param recover_src ip of the replication server to get the data from
+     * @param size size to get from the replication server
+    */
+    void recoverFromSrc(string &recover_src, size_t size);
+
+    const string getFileIdentifier() {
+        return QueuePairFactory::getIpAddress() + ":" + filename;  // e.g. "10.0.0.1:/home/user/001.log"
+    }
 };
 
 void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);

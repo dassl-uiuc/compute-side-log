@@ -67,7 +67,19 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
         }
     }
 
-    if (n_peers == 0) createClientZKNode();  // node doesn't exist, need to create client ZK node
+    if (n_peers == 0) {
+        createClientZKNode();  // node doesn't exist, need to create client ZK node
+    } else {
+        // todo: fetch data from replication servers
+        string recover_src;
+        size_t recover_size;
+        std::tie(recover_src, recover_size) = getRecoverSrcPeer();
+
+        if (recover_size > 0) {
+            LOG(INFO) << "recover " << recover_size << "B from " << recover_src;
+            recoverFromSrc(recover_src, recover_size);
+        }
+    }
 }
 
 void CSLClient::init(set<string> host_addresses) {
@@ -225,8 +237,7 @@ bool CSLClient::AddPeer(const string &host_addr) {
     RemoteConData prop;
     struct FileInfo fi;
     fi.size = buf_size;
-    const string file_identifier =
-        QueuePairFactory::getIpAddress() + ":" + filename;  // e.g. "10.0.0.1:/home/user/001.log"
+    const string file_identifier = getFileIdentifier();
     strcpy(fi.file_id, file_identifier.c_str());
     prop.qp = qp_pool->GetQpTo(host_addr, &fi);
     prop.socket = prop.qp->getRemoteSocket();
@@ -290,17 +301,44 @@ bool CSLClient::recoverPeer(string &new_peer) {
     lock_guard<mutex> guard(recover_lock);
     auto token = make_shared<infinity::requests::RequestToken>(context);
     auto &p = remote_props[new_peer];
-    p.qp->write(buffer.get(), 0, p.remote_buffer_token, 0, buf_offset.load(),
-                token.get());  // ? need mannual segmentation?
+    p.qp->write(buffer.get(), p.remote_buffer_token, buf_offset.load(), token.get());  // ? need mannual segmentation?
     token->waitUntilCompleted();
     return true;
 }
 
+tuple<string, size_t> CSLClient::getRecoverSrcPeer() {
+    const string file_id = getFileIdentifier();
+    size_t min_size = UINT64_MAX;
+    string ip_recover_src;
+    for (auto &p : remote_props) {
+        struct ClientReq getinfo_req;
+        size_t size = 0;
+
+        getinfo_req.type = GET_INFO;
+        getinfo_req.fi.size = 0;
+        strcpy(getinfo_req.fi.file_id, file_id.c_str());
+        send(p.second.socket, &getinfo_req, sizeof(getinfo_req), 0);
+        recv(p.second.socket, &size, sizeof(size), 0);
+        if (size != 0 && size < min_size) {
+            min_size = size;
+            ip_recover_src = p.first;
+        }
+    }
+    return make_tuple(ip_recover_src, min_size);
+}
+
+void CSLClient::recoverFromSrc(string &recover_src, size_t size) {
+    auto &p = remote_props[recover_src];
+    auto token = make_shared<infinity::requests::RequestToken>(context);
+    p.qp->read(buffer.get(), p.remote_buffer_token, size, token.get());  // ? need mannual segmentation?
+    token->waitUntilCompleted();
+    buf_offset = size;
+}
+
 void CSLClient::SendFinalization(int type) {
-    if (!in_use)
-        return;
+    if (!in_use) return;
     ClientReq req;
-    const string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;
+    const string file_identifier = getFileIdentifier();
     strcpy(req.fi.file_id, file_identifier.c_str());
     req.type = type;
 
@@ -318,7 +356,7 @@ void CSLClient::ReplaceBuffer(size_t size) {
 void CSLClient::SetFileInfo(const char *name, size_t size) {
     filename = name;
     buf_size = size;
-    const string file_identifier = QueuePairFactory::getIpAddress() + ":" + filename;
+    const string file_identifier = getFileIdentifier();
     ClientReq open_req;
     open_req.type = OPEN_FILE;
     open_req.fi.size = size;
