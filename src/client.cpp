@@ -5,7 +5,7 @@
 #include <infinity/core/Context.h>
 
 int main() {
-    infinity::core::Context *context = new infinity::core::Context(0, 1);
+    infinity::core::Context *context = new infinity::core::Context(infinity::core::Configuration::DEFAULT_IB_DEVICE, 1);
     auto qp_pool = std::make_shared<NCLQpPool>(context, PORT);
     auto mr_pool = std::make_shared<NCLMrPool>(context);
     // CSLClient client1({"127.0.0.1"}, PORT, 1024, 0, "file1");
