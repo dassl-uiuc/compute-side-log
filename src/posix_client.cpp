@@ -29,27 +29,29 @@ int main(int argc, char *argv[]) {
     char *buf = new char[MSG_SIZE];
     memset(buf, 42, MSG_SIZE);
 
-    auto start = std::chrono::high_resolution_clock::now();
-    for (i = 0; i < MR_SIZE / MSG_SIZE; i++) {
-        int ret = write(fd, buf, MSG_SIZE);
-    }
-    auto end = std::chrono::high_resolution_clock::now();
-    fdatasync(fd);
+    if (mode != 'r') {
+        auto start = std::chrono::high_resolution_clock::now();
+        for (i = 0; i < MR_SIZE / MSG_SIZE; i++) {
+            int ret;
+            ret = write(fd, buf, MSG_SIZE);
+        }
+        auto end = std::chrono::high_resolution_clock::now();
+        fdatasync(fd);
 
-    auto elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
-    std::cout << "total: " << elapse << "us, average: " << static_cast<double>(elapse) / i << "us" << std::endl;
-
-    if (mode == 'r') {
-        start = std::chrono::high_resolution_clock::now();
+        auto elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        std::cout << "total: " << elapse << "us, average: " << static_cast<double>(elapse) / i << "us" << std::endl;
+        close(fd);
+    } else {
+        auto start = std::chrono::high_resolution_clock::now();
         for (i = 0; i < MR_SIZE / MSG_SIZE; i++) {
             int ret = read(fd, buf, MSG_SIZE);
         }
-        end = std::chrono::high_resolution_clock::now();;
-        elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
+        auto end = std::chrono::high_resolution_clock::now();;
+        auto elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();
         std::cout << "total: " << elapse << "us, average: " << static_cast<double>(elapse) / i << "us" << std::endl;
-    }
 
-    close(fd);
+        close(fd);
+    }
 
     unlink("test.txt");
     delete buf;
