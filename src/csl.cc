@@ -27,6 +27,8 @@
 // #define CSL_DEBUG
 #define RECYCLE_ON_DELETE 0
 
+#define __NEED_RECOVER_DATA(flags) (((flags) & O_TRUNC) == 0)
+
 using original_open_t = int (*)(const char *, int, ...);
 // using original_creat_t = int (*)(const char *, mode_t);
 using original_openat_t = int (*)(int, const char *, int, ...);
@@ -68,7 +70,7 @@ int open(const char *pathname, int flags, ...) {
     }
 
     if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
-        auto csl_client = pool.GetClient(MR_SIZE, pathname);
+        auto csl_client = pool.GetClient(MR_SIZE, pathname, __NEED_RECOVER_DATA(flags));
         {
             std::lock_guard<std::mutex> lock(csl_lock);
             csl_fd_cli.insert(make_pair(fd, csl_client));
@@ -100,7 +102,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
     }
 
     if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
-        auto csl_client = pool.GetClient(MR_SIZE, pathname);
+        auto csl_client = pool.GetClient(MR_SIZE, pathname, __NEED_RECOVER_DATA(flags));
         {
             std::lock_guard<std::mutex> lock(csl_lock);
             csl_fd_cli.insert(make_pair(fd, csl_client));

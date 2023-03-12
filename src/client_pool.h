@@ -40,7 +40,7 @@ class CSLClientPool {
 
     shared_ptr<CSLClient> GetClient(set<string> host_address, size_t buf_size, const char *filename = "");
 
-    shared_ptr<CSLClient> GetClient(size_t buf_size, const char *filename);
+    shared_ptr<CSLClient> GetClient(size_t buf_size, const char *filename, bool try_recover=false);
 
     void RecycleClient(uint32_t client_id);
     int GetIdleCliCnt() { return idle_clients.size(); }

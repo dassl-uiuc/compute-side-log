@@ -63,7 +63,7 @@ class CSLClient {
     CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, set<string> host_addresses, size_t buf_size,
               uint32_t id = 0, const char *filename = "");
     CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, string mgr_hosts, size_t buf_size,
-              uint32_t id = 0, const char *filename = "", int rep_num = DEFAULT_REP_FACTOR);
+              uint32_t id = 0, const char *filename = "", int rep_num = DEFAULT_REP_FACTOR, bool try_recover = false);
     ~CSLClient();
 
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
@@ -130,6 +130,8 @@ class CSLClient {
      */
     void SetFileInfo(const char *name, size_t size);
 
+    void TryRecover();
+
     const set<string> &GetPeers() { return peers; }
     size_t GetBufSize() { return buf_size; }
     void SetInUse(bool is_inuse) { in_use = is_inuse; }
@@ -184,7 +186,9 @@ class CSLClient {
      * An unique identifier of each file for using in ZK (since ZK node name can't contain '/')
      */
     const string getZkNodeName() {
-        return QueuePairFactory::getIpAddress() + ":" + to_string(hash<string>()(filename));  // e.g. "10.0.0.1:1234567890"
+        // ? a zk node for each client machine or a zk node for each file?
+        // return QueuePairFactory::getIpAddress() + ":" + to_string(hash<string>()(filename));  // e.g. "10.0.0.1:1234567890"
+        return QueuePairFactory::getIpAddress();
     }
 };
 

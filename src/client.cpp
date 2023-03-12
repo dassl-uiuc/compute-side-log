@@ -9,7 +9,7 @@ int main() {
     auto qp_pool = std::make_shared<NCLQpPool>(context, PORT);
     auto mr_pool = std::make_shared<NCLMrPool>(context);
     // CSLClient client1({"127.0.0.1"}, PORT, 1024, 0, "file1");
-    CSLClient client2(qp_pool, mr_pool, ZK_DEFAULT_HOST, 1024, 1, "file2");
+    CSLClient client2(qp_pool, mr_pool, ZK_DEFAULT_HOST, 1024, 1, "file2", 1, true);
     client2.SetInUse(true);
 
     char test_buf[128];

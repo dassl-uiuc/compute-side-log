@@ -36,7 +36,7 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
 }
 
 CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, string mgr_hosts, size_t buf_size,
-                     uint32_t id, const char *name, int rep_num)
+                     uint32_t id, const char *name, int rep_num, bool try_recover)
     : qp_pool(qp_pool),
       mr_pool(mr_pool),
       rep_factor(rep_num),
@@ -69,16 +69,8 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
 
     if (n_peers == 0) {
         createClientZKNode();  // node doesn't exist, need to create client ZK node
-    } else {
-        // todo: fetch data from replication servers
-        string recover_src;
-        size_t recover_size;
-        std::tie(recover_src, recover_size) = getRecoverSrcPeer();
-
-        if (recover_size > 0) {
-            LOG(INFO) << "recover " << recover_size << "B from " << recover_src;
-            recoverFromSrc(recover_src, recover_size);
-        }
+    } else if (try_recover){
+        TryRecover();
     }
 }
 
@@ -341,6 +333,8 @@ tuple<string, size_t> CSLClient::getRecoverSrcPeer() {
             ip_recover_src = p.first;
         }
     }
+    if (min_size == UINT64_MAX)
+        min_size = 0;  // none server has replication for this file 
     return make_tuple(ip_recover_src, min_size);
 }
 
@@ -383,6 +377,18 @@ void CSLClient::SetFileInfo(const char *name, size_t size) {
     }
     for (auto &c : remote_props) {
         recv(c.second.qp->getRemoteSocket(), c.second.qp->getUserData(), sizeof(RegionToken), 0);
+    }
+}
+
+void CSLClient::TryRecover() {
+    // todo: get file info on creating connection to save 1 rtt
+    string recover_src;
+    size_t recover_size;
+    std::tie(recover_src, recover_size) = getRecoverSrcPeer();
+
+    if (recover_size > 0) {
+        LOG(INFO) << "recover " << recover_size << "B from " << recover_src;
+        recoverFromSrc(recover_src, recover_size);
     }
 }
 

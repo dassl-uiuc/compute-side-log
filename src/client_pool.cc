@@ -39,9 +39,10 @@ shared_ptr<CSLClient> CSLClientPool::GetClient(set<string> host_address, size_t 
     uint32_t cli_id;
     if (idle_clients.empty()) {
         cli_id = global_id++;
-        auto cli = busy_clients.insert(make_pair(cli_id, make_shared<CSLClient>(qp_pool, mr_pool, host_address, buf_size, cli_id, filename)));
+        auto cli = busy_clients.insert(
+            make_pair(cli_id, make_shared<CSLClient>(qp_pool, mr_pool, host_address, buf_size, cli_id, filename)));
     } else {
-        auto it  = idle_clients.begin();
+        auto it = idle_clients.begin();
         cli_id = it->first;
         cli = it->second;
         // TODO: replace peers if needed
@@ -55,14 +56,16 @@ shared_ptr<CSLClient> CSLClientPool::GetClient(set<string> host_address, size_t 
     return cli;
 }
 
-shared_ptr<CSLClient> CSLClientPool::GetClient(size_t buf_size, const char *filename) {
+shared_ptr<CSLClient> CSLClientPool::GetClient(size_t buf_size, const char *filename, bool try_recover) {
     lock_guard<mutex> guard(lock);
 
     shared_ptr<CSLClient> cli;
     uint32_t cli_id;
     if (idle_clients.empty()) {
         cli_id = global_id++;
-        cli = busy_clients.insert(make_pair(cli_id, make_shared<CSLClient>(qp_pool, mr_pool, mgr_hosts, buf_size, cli_id, filename)))
+        cli = busy_clients
+                  .insert(make_pair(cli_id, make_shared<CSLClient>(qp_pool, mr_pool, mgr_hosts, buf_size, cli_id,
+                                                                   filename, DEFAULT_REP_FACTOR, try_recover)))
                   .first->second;
     } else {
         auto it = idle_clients.begin();
@@ -70,6 +73,8 @@ shared_ptr<CSLClient> CSLClientPool::GetClient(size_t buf_size, const char *file
         cli = it->second;
         cli->ReplaceBuffer(buf_size);
         cli->SetFileInfo(filename, buf_size);
+        if (try_recover)
+            cli->TryRecover();
         idle_clients.erase(it);
         busy_clients.insert(make_pair(cli_id, cli));
     }
