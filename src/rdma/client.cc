@@ -97,7 +97,7 @@ void CSLClient::init(set<string> host_addresses) {
 
 int CSLClient::getPeersFromZK(set<string> &peer_ips) {
     int ret, buf_len = 512;
-    string node_path = ZK_CLI_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
+    string node_path = ZK_CLI_ROOT_PATH + "/" + getZkNodeName();
     char peers_buf[512];
     ret = zoo_get(zh, node_path.c_str(), 0, peers_buf, &buf_len, nullptr);
     if (ret) {  // client node doesn't exist, get peer ip from /servers
@@ -141,7 +141,7 @@ void CSLClient::createClientZKNode() {
         .count = 1,
         .data = acl,
     };
-    string node_path = ZK_CLI_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
+    string node_path = ZK_CLI_ROOT_PATH + "/" + getZkNodeName();
     int value = 0;
     ret = zoo_create(zh, ZK_CLI_ROOT_PATH.c_str(), (const char *)&value, sizeof(value), &aclv, ZOO_PERSISTENT, nullptr,
                      0);
@@ -163,7 +163,7 @@ CSLClient::~CSLClient() {
         SendFinalization(EXIT_PROC);  // destroy QP on server side
     }
     if (zh) {
-        string node_path = ZK_CLI_ROOT_PATH + "/" + QueuePairFactory::getIpAddress();
+        string node_path = ZK_CLI_ROOT_PATH + "/" + getZkNodeName();
         ret = zoo_delete(zh, node_path.c_str(), -1);
         if (ret) {
             LOG(ERROR) << "Failed to delete znode: " << node_path << ", errorno: " << ret;

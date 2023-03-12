@@ -173,8 +173,18 @@ class CSLClient {
     */
     void recoverFromSrc(string &recover_src, size_t size);
 
+    /**
+     * A human-readable unique identifier of each file
+     */
     const string getFileIdentifier() {
         return QueuePairFactory::getIpAddress() + ":" + filename;  // e.g. "10.0.0.1:/home/user/001.log"
+    }
+
+    /**
+     * An unique identifier of each file for using in ZK (since ZK node name can't contain '/')
+     */
+    const string getZkNodeName() {
+        return QueuePairFactory::getIpAddress() + ":" + to_string(hash<string>()(filename));  // e.g. "10.0.0.1:1234567890"
     }
 };
 
