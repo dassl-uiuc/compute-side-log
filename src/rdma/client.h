@@ -88,6 +88,12 @@ class CSLClient {
      */
     ssize_t Read(void *buf, size_t size);
 
+    /**
+     * This function does the same as lseek(). See `man lseek` for detail.
+     * Not all whence are supported
+     */
+    off_t Seek(off_t offset, int whence);
+
     void *GetBufData() { return buffer->getData(); }
 
     /**

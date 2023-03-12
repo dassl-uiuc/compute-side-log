@@ -217,6 +217,23 @@ ssize_t CSLClient::Read(void *buf, size_t size) {
     return size;
 }
 
+off_t CSLClient::Seek(off_t offset, int whence) {
+    switch (whence) {
+        case SEEK_SET:
+            buf_offset = min((size_t)offset, buffer->getSizeInBytes() - 1);
+            break;
+        case SEEK_CUR:
+            buf_offset = min((size_t)(offset + buf_offset), buffer->getSizeInBytes() - 1);
+            break;
+        case SEEK_END:
+            // TODO: need to know the current size of file (not buffer size)
+            break;
+        default:
+            LOG(WARNING) << "whence " << whence << " is not supported";
+    };
+    return buf_offset.load();
+}
+
 void CSLClient::Reset() {
     memset((void *)buffer->getAddress(), 0, buf_size);
     double usage = buf_offset.load() / 1024.0 / 1024.0;

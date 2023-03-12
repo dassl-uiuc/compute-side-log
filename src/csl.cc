@@ -35,6 +35,7 @@ using original_close_t = int (*)(int);
 using original_read_t = ssize_t (*)(int, void *, size_t);
 using original_pread_t = ssize_t (*)(int, void *, size_t, off_t);
 using original_unlink_t = int (*)(const char *);
+using original_lseek_t = off_t (*)(int, off_t, int);
 
 static original_open_t original_open = reinterpret_cast<original_open_t>(dlsym(RTLD_NEXT, "open"));
 // static original_creat_t original_creat = reinterpret_cast<original_creat_t>(dlsym(RTLD_NEXT, "creat"));
@@ -44,6 +45,7 @@ static original_close_t original_close = reinterpret_cast<original_close_t>(dlsy
 static original_read_t original_read = reinterpret_cast<original_read_t>(dlsym(RTLD_NEXT, "read"));
 static original_pread_t original_pread = reinterpret_cast<original_pread_t>(dlsym(RTLD_NEXT, "pread"));
 static original_unlink_t original_unlink = reinterpret_cast<original_unlink_t>(dlsym(RTLD_NEXT, "unlink"));
+static original_lseek_t original_lseek = reinterpret_cast<original_lseek_t>(dlsym(RTLD_NEXT, "lseek"));
 
 static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
 static std::unordered_map<std::string, shared_ptr<CSLClient> > csl_path_cli;
@@ -168,4 +170,17 @@ int unlink(const char *pathname) {
     }
 #endif
     return original_unlink(pathname);
+}
+
+off_t lseek(int fd, off_t offset, int whence) {
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
+        return cli->Seek(offset, whence);
+    } else {
+        csl_lock.unlock();
+        return original_lseek(fd, offset, whence);
+    }
 }
