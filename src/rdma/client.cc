@@ -17,9 +17,11 @@
 #include "../util.h"
 #include "common.h"
 
-#define FORCE_REMOTE_READ 1
+#define FORCE_REMOTE_READ   1
+#define USE_QUORUM_WRITE    1
 
 using infinity::queues::QueuePairFactory;
+using infinity::requests::RequestToken;
 
 CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, set<string> host_addresses,
                      size_t buf_size, uint32_t id, const char *name)
@@ -169,16 +171,16 @@ CSLClient::~CSLClient() {
 }
 
 void CSLClient::ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
-    infinity::requests::RequestToken request_token(context);
+    RequestToken request_token(context);
     RemoteConData &prop = remote_props.begin()->second;
     prop.qp->read(buffer.get(), local_off, prop.remote_buffer_token, remote_off, size, &request_token);
     request_token.waitUntilCompleted();
 }
 
 void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
-    vector<shared_ptr<infinity::requests::RequestToken> > request_tokens;
+    vector<shared_ptr<RequestToken> > request_tokens;
     for (auto &p : remote_props) {
-        auto token = make_shared<infinity::requests::RequestToken>(context);
+        auto token = make_shared<RequestToken>(context);
         request_tokens.emplace_back(token);
         p.second.qp->write(buffer.get(), local_off, p.second.remote_buffer_token, remote_off, size, token.get());
     }
@@ -188,13 +190,46 @@ void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size
     }
 }
 
+void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t size) {
+    vector<shared_ptr<RequestToken> > request_tokens;
+    for (auto &p : remote_props) {
+        auto token = make_shared<RequestToken>(context);
+        request_tokens.emplace_back(token);
+        p.second.op_queue.push(token);
+        p.second.qp->write(buffer.get(), local_off, p.second.remote_buffer_token, remote_off, size, token.get());
+    }
+
+    do {
+        for (auto &p : remote_props) {
+            auto op_q = p.second.op_queue;
+            if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed
+                op_q.back()->setAllPrevCompleted();
+                op_q.pop();
+            }
+        }
+    } while (!quorumCompleted(request_tokens));
+}
+
+bool CSLClient::quorumCompleted(vector<shared_ptr<infinity::requests::RequestToken>> &tokens) {
+    uint n = 0;
+    for (auto &t : tokens) {
+        if (t->checkAllPrevCompleted()) n++;
+        if (n > remote_props.size() / 2) return true;
+    }
+    return false;
+}
+
 ssize_t CSLClient::Append(const void *buf, size_t size) {
     // disable new append during recovering
     lock_guard<mutex> guard(recover_lock);  // TODO: enable async recovery
     size = min(size, buffer->getSizeInBytes() - buf_offset);
     size_t cur_off = buf_offset.fetch_add(size);
     memcpy((char *)buffer->getAddress() + cur_off, buf, size);
+#if USE_QUORUM_WRITE
+    WriteQuorum(cur_off, cur_off, size);
+#else
     WriteSync(cur_off, cur_off, size);
+#endif
     return size;
 }
 
@@ -308,7 +343,7 @@ string CSLClient::replacePeer(string &old_addr) {
 
 bool CSLClient::recoverPeer(string &new_peer) {
     lock_guard<mutex> guard(recover_lock);
-    auto token = make_shared<infinity::requests::RequestToken>(context);
+    auto token = make_shared<RequestToken>(context);
     auto &p = remote_props[new_peer];
     p.qp->write(buffer.get(), p.remote_buffer_token, buf_offset.load(), token.get());  // ? need mannual segmentation?
     token->waitUntilCompleted();
@@ -340,7 +375,7 @@ tuple<string, size_t> CSLClient::getRecoverSrcPeer() {
 
 void CSLClient::recoverFromSrc(string &recover_src, size_t size) {
     auto &p = remote_props[recover_src];
-    auto token = make_shared<infinity::requests::RequestToken>(context);
+    auto token = make_shared<RequestToken>(context);
     p.qp->read(buffer.get(), p.remote_buffer_token, size, token.get());  // ? need mannual segmentation?
     token->waitUntilCompleted();
     buf_offset = size;

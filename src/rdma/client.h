@@ -21,6 +21,7 @@
 
 #include <memory>
 #include <mutex>
+#include <queue>
 #include <set>
 #include <tuple>
 #include <unordered_map>
@@ -37,6 +38,7 @@ class CSLClient {
         shared_ptr<infinity::queues::QueuePair> qp;
         infinity::memory::RegionToken *remote_buffer_token;
         int socket;
+        queue<shared_ptr<infinity::requests::RequestToken> > op_queue;
     };
 
    protected:
@@ -66,8 +68,15 @@ class CSLClient {
               uint32_t id = 0, const char *filename = "", int rep_num = DEFAULT_REP_FACTOR, bool try_recover = false);
     ~CSLClient();
 
+    /**
+     * Synchronously write to all replicas
+     */
     void WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
     void ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size);
+    /**
+     * Write to a quorum of replicas before return
+     */
+    void WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t size);
 
     /**
      * Append to the end of the log.
@@ -140,6 +149,8 @@ class CSLClient {
    private:
     void init(set<string> host_addresses);
     void createClientZKNode();
+
+    bool quorumCompleted(vector<shared_ptr<infinity::requests::RequestToken> > &tokens);
 
     /**
      * @return number of peers already exists for this client. If this is the first time the client
