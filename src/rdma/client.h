@@ -11,6 +11,8 @@
 #define THREADED
 #endif
 
+#define ASYNC_QUORUM_POLL 1
+
 #include <infinity/core/Configuration.h>
 #include <infinity/core/Context.h>
 #include <infinity/memory/Buffer.h>
@@ -23,6 +25,7 @@
 #include <mutex>
 #include <queue>
 #include <set>
+#include <thread>
 #include <tuple>
 #include <unordered_map>
 
@@ -49,6 +52,10 @@ class CSLClient {
     unordered_map<string, RemoteConData> remote_props;
     set<string> peers;
     shared_ptr<infinity::memory::Buffer> buffer;
+#if ASYNC_QUORUM_POLL
+    thread cq_poll_th;
+#endif
+    bool run;
 
     int rep_factor;
     size_t buf_size;
@@ -122,7 +129,7 @@ class CSLClient {
      * close file: server will preserve the QP for future use
      * exit process: server will destroy the QP
      */
-    void SendFinalization(int type=CLOSE_FILE);
+    void SendFinalization(int type = CLOSE_FILE);
 
     /**
      * If buffer of a greater size is needed, recycle the buffer and get a new buffer from MR pool
@@ -180,10 +187,10 @@ class CSLClient {
 
     /**
      * Get the lost data from a replication server
-     * 
+     *
      * @param recover_src ip of the replication server to get the data from
      * @param size size to get from the replication server
-    */
+     */
     void recoverFromSrc(string &recover_src, size_t size);
 
     /**
@@ -201,6 +208,11 @@ class CSLClient {
         // return QueuePairFactory::getIpAddress() + ":" + to_string(hash<string>()(filename));  // e.g. "10.0.0.1:1234567890"
         return QueuePairFactory::getIpAddress();
     }
+
+    /**
+     * function for polling cq asynchrounously
+     */
+    void CQPollingFunc();
 };
 
 void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);

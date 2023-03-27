@@ -27,6 +27,7 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
                      size_t buf_size, uint32_t id, const char *name)
     : qp_pool(qp_pool),
       mr_pool(mr_pool),
+      run(true),
       rep_factor(host_addresses.size()),
       buf_size(buf_size),
       buf_offset(0),
@@ -41,6 +42,7 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
                      uint32_t id, const char *name, int rep_num, bool try_recover)
     : qp_pool(qp_pool),
       mr_pool(mr_pool),
+      run(true),
       rep_factor(rep_num),
       buf_size(buf_size),
       buf_offset(0),
@@ -74,6 +76,9 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
     } else if (try_recover){
         TryRecover();
     }
+#if USE_QUORUM_WRITE && ASYNC_QUORUM_POLL
+    cq_poll_th = thread(&CSLClient::CQPollingFunc, this);
+#endif
 }
 
 void CSLClient::init(set<string> host_addresses) {
@@ -153,6 +158,12 @@ void CSLClient::createClientZKNode() {
 
 CSLClient::~CSLClient() {
     int ret;
+
+#if USE_QUORUM_WRITE && ASYNC_QUORUM_POLL
+    run = false;
+    cq_poll_th.join();
+#endif
+
     if (in_use) {
         SendFinalization(EXIT_PROC);  // destroy QP on server side
     }
@@ -200,13 +211,18 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
     }
 
     do {
+#if ASYNC_QUORUM_POLL
+#else
         for (auto &p : remote_props) {
             auto op_q = p.second.op_queue;
+            if (op_q.empty())
+                continue;
             if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed
                 op_q.back()->setAllPrevCompleted();
                 op_q.pop();
             }
         }
+#endif
     } while (!quorumCompleted(request_tokens));
 }
 
@@ -217,6 +233,22 @@ bool CSLClient::quorumCompleted(vector<shared_ptr<infinity::requests::RequestTok
         if (n > remote_props.size() / 2) return true;
     }
     return false;
+}
+
+void CSLClient::CQPollingFunc() {
+    LOG(INFO) << "CQ Polling Thread running";
+    while (run) {
+        for (auto &p : remote_props) {
+            auto op_q = p.second.op_queue;
+            if (op_q.empty())
+                continue;
+            if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed
+                op_q.back()->setAllPrevCompleted();
+                op_q.pop();
+            }
+        }
+    }
+    LOG(INFO) << "CQ Polling Thread exit";
 }
 
 ssize_t CSLClient::Append(const void *buf, size_t size) {
@@ -278,7 +310,7 @@ bool CSLClient::AddPeer(const string &host_addr) {
     }
 
     LOG(INFO) << "Connecting to " << host_addr;
-    RemoteConData prop;
+    RemoteConData &prop = remote_props.insert(make_pair(host_addr, RemoteConData())).first->second;
     struct FileInfo fi;
     fi.size = buf_size;
     const string file_identifier = getFileIdentifier();
@@ -287,7 +319,6 @@ bool CSLClient::AddPeer(const string &host_addr) {
     prop.socket = prop.qp->getRemoteSocket();
     LOG(INFO) << host_addr << " connected";
     prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
-    remote_props[host_addr] = prop;
     peers.insert(host_addr);
 
     return true;
