@@ -214,7 +214,7 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
 #if ASYNC_QUORUM_POLL
 #else
         for (auto &p : remote_props) {
-            auto op_q = p.second.op_queue;
+            auto &op_q = p.second.op_queue;
             if (op_q.empty())
                 continue;
             if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed
@@ -239,7 +239,7 @@ void CSLClient::CQPollingFunc() {
     LOG(INFO) << "CQ Polling Thread running";
     while (run) {
         for (auto &p : remote_props) {
-            auto op_q = p.second.op_queue;
+            auto &op_q = p.second.op_queue;
             if (op_q.empty())
                 continue;
             if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed

@@ -79,7 +79,7 @@ void CSLServer::Run() {
 
         ret = select(max_fd + 1, &fds, nullptr, nullptr, &tv);
         if (ret < 0) {
-            LOG(ERROR) << "Error select(), errno: " << ret;
+            LOG(ERROR) << "Error select(), errno: " << errno;
             return;
         } else if (ret > 0) {
             // check for incoming connection
