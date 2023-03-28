@@ -206,13 +206,19 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
     for (auto &p : remote_props) {
         auto token = make_shared<RequestToken>(context);
         request_tokens.emplace_back(token);
-        p.second.op_queue.push(token);
+        {
+#if ASYNC_QUORUM_POLL
+            lock_guard<mutex> lk(poll_lock);
+#endif
+            p.second.op_queue.push(token);
+        }
         p.second.qp->write(buffer.get(), local_off, p.second.remote_buffer_token, remote_off, size, token.get());
     }
 
     do {
 #if ASYNC_QUORUM_POLL
 #else
+        // todo: what if one rep fail-slow? (queue will build up)
         for (auto &p : remote_props) {
             auto &op_q = p.second.op_queue;
             if (op_q.empty())
@@ -242,9 +248,12 @@ void CSLClient::CQPollingFunc() {
             auto &op_q = p.second.op_queue;
             if (op_q.empty())
                 continue;
-            if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed
-                op_q.back()->setAllPrevCompleted();
-                op_q.pop();
+            {
+                lock_guard<mutex> lk(poll_lock);
+                if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed
+                    op_q.back()->setAllPrevCompleted();
+                    op_q.pop();
+                }
             }
         }
     }

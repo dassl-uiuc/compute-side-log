@@ -54,6 +54,7 @@ class CSLClient {
     shared_ptr<infinity::memory::Buffer> buffer;
 #if ASYNC_QUORUM_POLL
     thread cq_poll_th;
+    mutex poll_lock;
 #endif
     bool run;
 
