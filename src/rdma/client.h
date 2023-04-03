@@ -11,7 +11,7 @@
 #define THREADED
 #endif
 
-#define ASYNC_QUORUM_POLL 1
+#define ASYNC_QUORUM_POLL 0
 
 #include <infinity/core/Configuration.h>
 #include <infinity/core/Context.h>

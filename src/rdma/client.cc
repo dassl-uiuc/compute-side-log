@@ -249,7 +249,9 @@ void CSLClient::CQPollingFunc() {
             if (op_q.empty())
                 continue;
             {
+#if ASYNC_QUORUM_POLL
                 lock_guard<mutex> lk(poll_lock);
+#endif
                 if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed
                     op_q.back()->setAllPrevCompleted();
                     op_q.pop();
