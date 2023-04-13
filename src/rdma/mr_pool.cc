@@ -14,7 +14,9 @@ NCLMrPool::NCLMrPool(Context *context) : context(context), free_mrs(mr_cmp) {}
 shared_ptr<Buffer> NCLMrPool::GetMRofSize(size_t size) {
     lock_guard<mutex> guard(lock);
     if (free_mrs.empty()) {
-        return make_shared<Buffer>(context, size);
+        auto mr = make_shared<Buffer>(context, size);
+        mr->zero();
+        return mr;
     } else {
         auto it_mr = find_if(free_mrs.begin(), free_mrs.end(),
                              [size](const shared_ptr<Buffer> &b) -> bool { return b->getSizeInBytes() >= size; });
