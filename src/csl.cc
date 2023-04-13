@@ -40,8 +40,10 @@ using original_unlink_t = int (*)(const char *);
 using original_lseek_t = off_t (*)(int, off_t, int);
 
 static original_open_t original_open = reinterpret_cast<original_open_t>(dlsym(RTLD_NEXT, "open"));
+static original_open_t original_open64 = reinterpret_cast<original_open_t>(dlsym(RTLD_NEXT, "open64"));
 // static original_creat_t original_creat = reinterpret_cast<original_creat_t>(dlsym(RTLD_NEXT, "creat"));
 static original_openat_t original_openat = reinterpret_cast<original_openat_t>(dlsym(RTLD_NEXT, "openat"));
+static original_openat_t original_openat64 = reinterpret_cast<original_openat_t>(dlsym(RTLD_NEXT, "openat64"));
 static original_write_t original_write = reinterpret_cast<original_write_t>(dlsym(RTLD_NEXT, "write"));
 static original_close_t original_close = reinterpret_cast<original_close_t>(dlsym(RTLD_NEXT, "close"));
 static original_read_t original_read = reinterpret_cast<original_read_t>(dlsym(RTLD_NEXT, "read"));
@@ -86,6 +88,38 @@ int open(const char *pathname, int flags, ...) {
     return fd;
 }
 
+int open64(const char *pathname, int flags, ...) {
+    int fd;
+
+    int mode = 0;
+    if (__OPEN_NEEDS_MODE(flags)) {
+        va_list arg;
+        va_start(arg, flags);
+        mode = va_arg(arg, int);
+        va_end(arg);
+
+        fd = original_open64(pathname, flags, mode);
+    } else {
+        fd = original_open64(pathname, flags);
+    }
+
+    if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
+        auto csl_client = pool.GetClient(MR_SIZE, pathname, __NEED_RECOVER_DATA(flags));
+        {
+            std::lock_guard<std::mutex> lock(csl_lock);
+            csl_fd_cli.insert(make_pair(fd, csl_client));
+#if RECYCLE_ON_DELETE
+            csl_path_cli.insert(make_pair(pathname, csl_client));
+#endif
+        }
+    }
+
+#ifdef CSL_DEBUG
+    printf("open64 path %s, flag 0x%x, mode 0%o\n", pathname, flags, mode);
+#endif
+    return fd;
+}
+
 int openat(int dirfd, const char *pathname, int flags, ...) {
     int fd;
 
@@ -111,6 +145,35 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
 
 #ifdef CSL_DEBUG
     printf("openat dir %d path %s, flag 0x%x, mode 0%o\n", dirfd, pathname, flags, mode);
+#endif
+    return fd;
+}
+
+int openat64(int dirfd, const char *pathname, int flags, ...) {
+    int fd;
+
+    mode_t mode = 0;
+    if (__OPEN_NEEDS_MODE(flags)) {
+        va_list arg;
+        va_start(arg, flags);
+        mode = va_arg(arg, mode_t);
+        va_end(arg);
+
+        fd = original_openat64(dirfd, pathname, flags, mode);
+    } else {
+        fd = original_openat64(dirfd, pathname, flags);
+    }
+
+    if (__IS_COMP_SIDE_LOG(flags) && fd >= 0) {
+        auto csl_client = pool.GetClient(MR_SIZE, pathname, __NEED_RECOVER_DATA(flags));
+        {
+            std::lock_guard<std::mutex> lock(csl_lock);
+            csl_fd_cli.insert(make_pair(fd, csl_client));
+        }
+    }
+
+#ifdef CSL_DEBUG
+    printf("openat64 dir %d path %s, flag 0x%x, mode 0%o\n", dirfd, pathname, flags, mode);
 #endif
     return fd;
 }
