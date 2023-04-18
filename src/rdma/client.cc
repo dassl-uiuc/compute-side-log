@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <glog/logging.h>
 #include <stdlib.h>
+#include <sys/stat.h>
 
 #include <chrono>
 #include <memory>
@@ -17,7 +18,7 @@
 #include "../util.h"
 #include "common.h"
 
-#define FORCE_REMOTE_READ   1
+#define FORCE_REMOTE_READ   0
 #define USE_QUORUM_WRITE    1
 
 using infinity::queues::QueuePairFactory;
@@ -264,7 +265,7 @@ void CSLClient::CQPollingFunc() {
 
 ssize_t CSLClient::Append(const void *buf, size_t size) {
     // disable new append during recovering
-    lock_guard<mutex> guard(recover_lock);  // TODO: enable async recovery
+    // lock_guard<mutex> guard(recover_lock);  // TODO: enable async recovery
     size = min(size, buffer->getSizeInBytes() - buf_offset);
     size_t cur_off = buf_offset.fetch_add(size);
     memcpy((char *)buffer->getAddress() + cur_off, buf, size);
@@ -272,6 +273,17 @@ ssize_t CSLClient::Append(const void *buf, size_t size) {
     WriteQuorum(cur_off, cur_off, size);
 #else
     WriteSync(cur_off, cur_off, size);
+#endif
+    return size;
+}
+
+ssize_t CSLClient::WritePos(const void *buf, size_t size, off_t pos) {
+    size = min(size, buffer->getSizeInBytes() - pos);
+    memcpy((char *)buffer->getAddress() + pos, buf, size);
+#if USE_QUORUM_WRITE
+    WriteQuorum(pos, pos, size);
+#else
+    WriteSync(pos, pos, size);
 #endif
     return size;
 }
@@ -284,6 +296,15 @@ ssize_t CSLClient::Read(void *buf, size_t size) {
     ReadSync(cur_off, cur_off, size);
 #endif
     memcpy(buf, (char *)buffer->getAddress() + cur_off, size);
+    return size;
+}
+
+ssize_t CSLClient::ReadPos(void *buf, size_t size, off_t pos) {
+    size = min(size, buffer->getSizeInBytes() - pos);
+#if FORCE_REMOTE_READ
+    ReadSync(pos, pos, size);
+#endif
+    memcpy(buf, (char *)buffer->getAddress() + pos, size);
     return size;
 }
 
@@ -383,7 +404,7 @@ string CSLClient::replacePeer(string &old_addr) {
     }
 }
 
-bool CSLClient::recoverPeer(string &new_peer) {
+bool CSLClient::recoverPeer(const string &new_peer) {
     lock_guard<mutex> guard(recover_lock);
     auto token = make_shared<RequestToken>(context);
     auto &p = remote_props[new_peer];
@@ -466,6 +487,17 @@ void CSLClient::TryRecover() {
     if (recover_size > 0) {
         LOG(INFO) << "recover " << recover_size << "B from " << recover_src;
         recoverFromSrc(recover_src, recover_size);
+    }
+}
+
+void CSLClient::TryLocalRecover(int fd) {
+    struct stat log_stat;
+    fstat(fd, &log_stat);
+    if (log_stat.st_size > 0) {
+        LOG(INFO) << "recover " << log_stat.st_size << "B from local";
+        read(fd, buffer->getData(), log_stat.st_size);
+        for (auto &p : peers)
+            recoverPeer(p);
     }
 }
 

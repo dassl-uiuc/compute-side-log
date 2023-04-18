@@ -96,6 +96,11 @@ class CSLClient {
     ssize_t Append(const void *buf, size_t size);
 
     /**
+     * 
+    */
+    ssize_t WritePos(const void *buf, size_t size, off_t pos);
+
+    /**
      * Read from the log.
      * Behavior of this call is expected to be consistent with glibc READ(2)
      *
@@ -104,6 +109,11 @@ class CSLClient {
      * @return actual size of data read
      */
     ssize_t Read(void *buf, size_t size);
+
+    /**
+     * 
+    */
+    ssize_t ReadPos(void *buf, size_t size, off_t pos);
 
     /**
      * This function does the same as lseek(). See `man lseek` for detail.
@@ -147,7 +157,15 @@ class CSLClient {
      */
     void SetFileInfo(const char *name, size_t size);
 
+    /**
+     * 
+    */
     void TryRecover();
+
+    /**
+     * 
+    */
+    void TryLocalRecover(int fd);
 
     const set<string> &GetPeers() { return peers; }
     size_t GetBufSize() { return buf_size; }
@@ -177,7 +195,7 @@ class CSLClient {
      * @param new_addr address of the peer to be recovered
      * @return true if recovery is successful
      */
-    bool recoverPeer(string &new_addr);
+    bool recoverPeer(const string &new_addr);
 
     /**
      * Get the ip address of the replication server from which the client recover the lost data.
