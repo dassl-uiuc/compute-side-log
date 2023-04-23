@@ -121,6 +121,11 @@ class CSLClient {
      */
     off_t Seek(off_t offset, int whence);
 
+    /**
+     * 
+    */
+    int Truncate(off_t length);
+
     void *GetBufData() { return buffer->getData(); }
 
     /**

@@ -22,7 +22,9 @@ int main(int argc, char *argv[]) {
             mode = argv[2][0];
         }
     }
-    int fd = open("test.txt", O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_CSL, 0644);
+    int flags = O_RDWR | O_CREAT | O_CLOEXEC | O_CSL;
+    if (mode == 'w') flags |= O_TRUNC;
+    int fd = open("test.txt", flags, 0644);
     if (fd < 0) {
         std::cerr << "open file failed: " << errno << std::endl;
     }
@@ -34,6 +36,10 @@ int main(int argc, char *argv[]) {
         for (i = 0; i < MR_SIZE / MSG_SIZE; i++) {
             int ret;
             ret = write(fd, buf, MSG_SIZE);
+            if (ret != MSG_SIZE) {
+                std::cerr << "write error\n";
+                exit(1);
+            }
         }
         auto end = std::chrono::high_resolution_clock::now();
         fdatasync(fd);
@@ -45,6 +51,10 @@ int main(int argc, char *argv[]) {
         auto start = std::chrono::high_resolution_clock::now();
         for (i = 0; i < MR_SIZE / MSG_SIZE; i++) {
             int ret = read(fd, buf, MSG_SIZE);
+            if (ret != MSG_SIZE) {
+                std::cerr << "read error\n";
+                exit(1);
+            }
         }
         auto end = std::chrono::high_resolution_clock::now();;
         auto elapse = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count();

@@ -325,6 +325,15 @@ off_t CSLClient::Seek(off_t offset, int whence) {
     return buf_offset.load();
 }
 
+int CSLClient::Truncate(off_t length) {
+    // todo: currently we do not maintain the size so no action is taken to adjust the size
+    LOG(INFO) << "current size " << buf_offset << " truncate to " << length;
+    if (length < buf_offset) {
+        memset((char*)buffer->getData() + length, 0, buf_offset.exchange(length) - length);
+    }
+    return 0;
+}
+
 void CSLClient::Reset() {
     memset((void *)buffer->getAddress(), 0, buf_size);
     double usage = buf_offset.load() / 1024.0 / 1024.0;

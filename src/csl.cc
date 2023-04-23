@@ -15,8 +15,8 @@
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
-#include <unistd.h>
 #include <sys/uio.h>
+#include <unistd.h>
 
 #include <mutex>
 #include <string>
@@ -29,7 +29,7 @@
 #define RECYCLE_ON_DELETE 0
 #define RECOVER_FROM_REMOTE 0
 
-#define __NEED_RECOVER_DATA(flags) (((flags) & O_TRUNC) == 0)
+#define __NEED_RECOVER_DATA(flags) (((flags)&O_TRUNC) == 0)
 
 static original_open_t original_open = reinterpret_cast<original_open_t>(dlsym(RTLD_NEXT, "open"));
 static original_open_t original_open64 = reinterpret_cast<original_open_t>(dlsym(RTLD_NEXT, "open64"));
@@ -45,6 +45,9 @@ static original_pread_t original_pread = reinterpret_cast<original_pread_t>(dlsy
 static original_pread_t original_pread64 = reinterpret_cast<original_pread_t>(dlsym(RTLD_NEXT, "pread64"));
 static original_unlink_t original_unlink = reinterpret_cast<original_unlink_t>(dlsym(RTLD_NEXT, "unlink"));
 static original_lseek_t original_lseek = reinterpret_cast<original_lseek_t>(dlsym(RTLD_NEXT, "lseek"));
+static original_ftruncate_t original_ftruncate = reinterpret_cast<original_ftruncate_t>(dlsym(RTLD_NEXT, "ftruncate"));
+static original_ftruncate_t original_ftruncate64 =
+    reinterpret_cast<original_ftruncate_t>(dlsym(RTLD_NEXT, "ftruncate64"));
 
 static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
 static std::unordered_map<std::string, shared_ptr<CSLClient> > csl_path_cli;
@@ -63,7 +66,7 @@ void getClient(const char *pathname, int flags, int fd) {
             csl_path_cli.insert(make_pair(pathname, csl_client));
 #endif
         }
-        
+
         {
             std::lock_guard<std::mutex> lock(csl_lock);
             csl_fd_cli.insert(make_pair(fd, csl_client));
@@ -206,7 +209,6 @@ ssize_t pwrite(int fd, const void *buf, size_t count, off_t offset) {
     return pwrite_internal(fd, buf, count, offset, original_pwrite);
 }
 
-
 ssize_t pwrite64(int fd, const void *buf, size_t count, off_t offset) {
     return pwrite_internal(fd, buf, count, offset, original_pwrite64);
 }
@@ -296,3 +298,20 @@ off_t lseek(int fd, off_t offset, int whence) {
         return original_lseek(fd, offset, whence);
     }
 }
+
+int ftruncate_internal(int fd, off_t length, original_ftruncate_t ftruncate_impl) {
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
+        return cli->Truncate(length);
+    } else {
+        csl_lock.unlock();
+        return ftruncate_impl(fd, length);
+    }
+}
+
+int ftruncate(int fd, off_t length) { return ftruncate_internal(fd, length, original_ftruncate); }
+
+int ftruncate64(int fd, off_t length) { return ftruncate_internal(fd, length, original_ftruncate64); }
