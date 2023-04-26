@@ -24,6 +24,7 @@
 
 #include "client_pool.h"
 #include "csl_config.h"
+#include "syscall_type.h"
 
 // #define CSL_DEBUG
 #define RECYCLE_ON_DELETE 0

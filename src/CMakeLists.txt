@@ -10,6 +10,17 @@ add_library(csl SHARED
     csl.h
     ${SRC_FILES})
 
+add_library(nclstat SHARED
+    ncl_stat.cc
+    ${CMAKE_CURRENT_SOURCE_DIR}/ncl_stat.cc)
+
+target_include_directories(nclstat
+    PRIVATE ${CMAKE_SOURCE_DIR}/HdrHistogram_c/include)
+
+target_link_libraries(nclstat
+    PRIVATE hdr_histogram_static
+    ${CMAKE_DL_LIBS})
+
 add_executable(server server.cpp)
 add_executable(client client.cpp)
 add_executable(posix_client posix_client.cpp)
@@ -27,4 +38,4 @@ target_link_libraries(csl
 
 target_link_libraries(server csl)
 target_link_libraries(client csl)
-target_link_libraries(posix_client csl)
+target_link_libraries(posix_client nclstat)

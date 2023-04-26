@@ -20,5 +20,6 @@ find_package(Threads REQUIRED)
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -pg")
 
 add_subdirectory(RDMA)
+add_subdirectory(HdrHistogram_c)
 add_subdirectory(src)
 add_subdirectory(tst)

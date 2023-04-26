@@ -4,3 +4,6 @@
 [submodule "zookeeper"]
 	path = zookeeper
 	url = git@github.com:apache/zookeeper.git
+[submodule "HdrHistogram_c"]
+	path = HdrHistogram_c
+	url = https://github.com/HdrHistogram/HdrHistogram_c.git
