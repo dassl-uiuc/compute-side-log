@@ -14,3 +14,4 @@ using original_pread_t = ssize_t (*)(int, void *, size_t, off_t);
 using original_unlink_t = int (*)(const char *);
 using original_lseek_t = off_t (*)(int, off_t, int);
 using original_ftruncate_t = int (*)(int, off_t);
+using original_fsync_t = int (*)(int);

@@ -49,6 +49,8 @@ static original_lseek_t original_lseek = reinterpret_cast<original_lseek_t>(dlsy
 static original_ftruncate_t original_ftruncate = reinterpret_cast<original_ftruncate_t>(dlsym(RTLD_NEXT, "ftruncate"));
 static original_ftruncate_t original_ftruncate64 =
     reinterpret_cast<original_ftruncate_t>(dlsym(RTLD_NEXT, "ftruncate64"));
+static original_fsync_t original_fsync = reinterpret_cast<original_fsync_t>(dlsym(RTLD_NEXT, "fsync"));
+static original_fsync_t original_fdatasync = reinterpret_cast<original_fsync_t>(dlsym(RTLD_NEXT, "fdatasync"));
 
 static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
 static std::unordered_map<std::string, shared_ptr<CSLClient> > csl_path_cli;
@@ -316,3 +318,14 @@ int ftruncate_internal(int fd, off_t length, original_ftruncate_t ftruncate_impl
 int ftruncate(int fd, off_t length) { return ftruncate_internal(fd, length, original_ftruncate); }
 
 int ftruncate64(int fd, off_t length) { return ftruncate_internal(fd, length, original_ftruncate64); }
+
+int sync_internal(int fd, original_fsync_t sync_impl) {
+    if (csl_fd_cli.find(fd) == csl_fd_cli.end())
+        return sync_impl(fd);
+    else
+        return 0;  // fsync/fdatasync is a no-op for NCL
+}
+
+int fsync(int fd) { return sync_internal(fd, original_fsync); }
+
+int fdatasync(int fd) { return sync_internal(fd, original_fdatasync); }

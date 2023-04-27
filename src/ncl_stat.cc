@@ -13,7 +13,6 @@
 
 #include "syscall_type.h"
 
-using original_fsync_t = int (*)(int);
 using original_fopen_t = FILE *(*)(const char *, const char *);
 using original_fwrite_t = size_t (*)(const void *, size_t, size_t, FILE *);
 using original_fclose_t = int (*)(FILE *);
