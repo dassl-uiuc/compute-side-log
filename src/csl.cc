@@ -27,8 +27,8 @@
 #include "syscall_type.h"
 
 // #define CSL_DEBUG
-#define RECYCLE_ON_DELETE 0
-#define RECOVER_FROM_REMOTE 0
+#define RECYCLE_ON_DELETE 1
+#define RECOVER_FROM_REMOTE 1
 
 #define __NEED_RECOVER_DATA(flags) (((flags)&O_TRUNC) == 0)
 
@@ -51,6 +51,10 @@ static original_ftruncate_t original_ftruncate64 =
     reinterpret_cast<original_ftruncate_t>(dlsym(RTLD_NEXT, "ftruncate64"));
 static original_fsync_t original_fsync = reinterpret_cast<original_fsync_t>(dlsym(RTLD_NEXT, "fsync"));
 static original_fsync_t original_fdatasync = reinterpret_cast<original_fsync_t>(dlsym(RTLD_NEXT, "fdatasync"));
+static original_fread_t original_fread = reinterpret_cast<original_fread_t>(dlsym(RTLD_NEXT, "fread"));
+static original_fread_t original_fread_unlocked =
+    reinterpret_cast<original_fread_t>(dlsym(RTLD_NEXT, "fread_unlocked"));
+static original_feof_t original_feof = reinterpret_cast<original_feof_t>(dlsym(RTLD_NEXT, "feof"));
 
 static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
 static std::unordered_map<std::string, shared_ptr<CSLClient> > csl_path_cli;
@@ -58,7 +62,6 @@ static std::mutex csl_lock;
 static CSLClientPool pool;
 
 void getClient(const char *pathname, int flags, int fd) {
-    if ((flags & O_ACCMODE) == O_RDONLY) return;
     if (__IS_COMP_SIDE_LOG(flags) && (fd >= 0)) {
         std::shared_ptr<CSLClient> csl_client;
         if (csl_path_cli.find(pathname) != csl_path_cli.end()) {
@@ -329,3 +332,49 @@ int sync_internal(int fd, original_fsync_t sync_impl) {
 int fsync(int fd) { return sync_internal(fd, original_fsync); }
 
 int fdatasync(int fd) { return sync_internal(fd, original_fdatasync); }
+
+size_t fread_internal(void *ptr, size_t size, size_t nmemb, FILE *stream, original_fread_t fread_impl) {
+    int fd = fileno(stream);
+    size_t count = size * nmemb;
+
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
+
+        int ret = cli->Read(ptr, count);
+#ifdef CSL_DEBUG
+        printf("compute side log fread, fd: %d, ret: %d\n", fd, ret);
+#endif
+        return ret;
+    } else {
+        csl_lock.unlock();
+        return fread_impl(ptr, size, nmemb, stream);
+    }
+}
+
+size_t fread(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+    return fread_internal(ptr, size, nmemb, stream, original_fread);
+}
+
+size_t fread_unlocked(void *ptr, size_t size, size_t nmemb, FILE *stream) {
+    return fread_internal(ptr, size, nmemb, stream, original_fread_unlocked);
+}
+
+int feof(FILE *stream) {
+    int fd = fileno(stream);
+
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
+
+        int ret = cli->Eof();
+        return ret;
+    } else {
+        csl_lock.unlock();
+        return original_feof(stream);
+    }
+}

@@ -11,8 +11,6 @@
 #define THREADED
 #endif
 
-#include <unordered_map>
-
 #include <infinity/core/Configuration.h>
 #include <infinity/core/Context.h>
 #include <infinity/memory/Buffer.h>
@@ -20,6 +18,9 @@
 #include <infinity/queues/QueuePair.h>
 #include <infinity/queues/QueuePairFactory.h>
 #include <zookeeper/zookeeper.h>
+
+#include <fstream>
+#include <unordered_map>
 
 #include "../csl_config.h"
 #include "mr_pool.h"
@@ -56,6 +57,7 @@ class CSLServer {
     vector<string> GetAllFileId();
     void *GetBufData(const string &fileid) { return local_cons[fileid].buffer->getData(); }
     void Stop() { stop = true; }
+    void Preload(ifstream &file);
 
    private:
     size_t findSize(const string &file_id);

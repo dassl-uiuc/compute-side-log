@@ -32,6 +32,7 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
       rep_factor(host_addresses.size()),
       buf_size(buf_size),
       buf_offset(0),
+      file_size(0),
       in_use(false),
       id(id),
       filename(name),
@@ -47,6 +48,7 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
       rep_factor(rep_num),
       buf_size(buf_size),
       buf_offset(0),
+      file_size(0),
       in_use(false),
       id(id),
       filename(name),
@@ -170,7 +172,7 @@ CSLClient::~CSLClient() {
     }
     if (zh) {
         string node_path = ZK_CLI_ROOT_PATH + "/" + getZkNodeName();
-        ret = zoo_delete(zh, node_path.c_str(), -1);
+        // ret = zoo_delete(zh, node_path.c_str(), -1);
         if (ret) {
             LOG(ERROR) << "Failed to delete znode: " << node_path << ", errorno: " << ret;
         }
@@ -268,6 +270,7 @@ ssize_t CSLClient::Append(const void *buf, size_t size) {
     // lock_guard<mutex> guard(recover_lock);  // TODO: enable async recovery
     size = min(size, buffer->getSizeInBytes() - buf_offset);
     size_t cur_off = buf_offset.fetch_add(size);
+    file_size = max(file_size.load(), buf_offset.load());
     memcpy((char *)buffer->getAddress() + cur_off, buf, size);
 #if USE_QUORUM_WRITE
     WriteQuorum(cur_off, cur_off, size);
@@ -289,8 +292,7 @@ ssize_t CSLClient::WritePos(const void *buf, size_t size, off_t pos) {
 }
 
 ssize_t CSLClient::Read(void *buf, size_t size) {
-    // TODO: read from remote MR?
-    size = min(size, buffer->getSizeInBytes() - buf_offset);
+    size = min(size, file_size - buf_offset);
     size_t cur_off = buf_offset.fetch_add(size);
 #if FORCE_REMOTE_READ
     ReadSync(cur_off, cur_off, size);
@@ -300,7 +302,7 @@ ssize_t CSLClient::Read(void *buf, size_t size) {
 }
 
 ssize_t CSLClient::ReadPos(void *buf, size_t size, off_t pos) {
-    size = min(size, buffer->getSizeInBytes() - pos);
+    size = min(size, file_size - pos);
 #if FORCE_REMOTE_READ
     ReadSync(pos, pos, size);
 #endif
@@ -338,7 +340,7 @@ void CSLClient::Reset() {
     memset((void *)buffer->getAddress(), 0, buf_size);
     double usage = buf_offset.load() / 1024.0 / 1024.0;
     buf_offset.store(0);
-    SendFinalization();
+    SendFinalization(CLOSE_FILE);
     SetInUse(false);
     filename.clear();
     LOG(INFO) << "csl client " << id << " recycled, MR usage: " << usage << "MB";
@@ -450,7 +452,7 @@ void CSLClient::recoverFromSrc(string &recover_src, size_t size) {
     auto token = make_shared<RequestToken>(context);
     p.qp->read(buffer.get(), p.remote_buffer_token, size, token.get());  // ? need mannual segmentation?
     token->waitUntilCompleted();
-    buf_offset = size;
+    file_size = size;
 }
 
 void CSLClient::SendFinalization(int type) {
@@ -494,7 +496,7 @@ void CSLClient::TryRecover() {
     std::tie(recover_src, recover_size) = getRecoverSrcPeer();
 
     if (recover_size > 0) {
-        LOG(INFO) << "recover " << recover_size << "B from " << recover_src;
+        LOG(INFO) << "recover " << recover_size << "B for " << filename << " from " << recover_src;
         recoverFromSrc(recover_src, recover_size);
     }
 }

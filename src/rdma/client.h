@@ -61,6 +61,7 @@ class CSLClient {
     int rep_factor;
     size_t buf_size;
     atomic<size_t> buf_offset;
+    atomic<size_t> file_size;
     bool in_use;
     uint32_t id;
     string filename;
@@ -125,6 +126,8 @@ class CSLClient {
      * 
     */
     int Truncate(off_t length);
+
+    int Eof() { return buf_offset >= file_size ? 1 : 0; }
 
     void *GetBufData() { return buffer->getData(); }
 

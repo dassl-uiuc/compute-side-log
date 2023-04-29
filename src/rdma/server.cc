@@ -199,8 +199,8 @@ int CSLServer::handleClientRequest(int socket) {
             if (it == local_cons.end()) {
                 LOG(ERROR) << "[EXIT PROC] can't find file id: " << file_id;
             } else {
-                finalizeConData(it->second);
-                local_cons.erase(it);
+                // finalizeConData(it->second);
+                // local_cons.erase(it);
             }
             if (it_qp == existing_qps.end()) {
                 LOG(ERROR) << "[EXIT PROC] can't find QP with socket: " << socket;
@@ -237,6 +237,10 @@ vector<string> CSLServer::GetAllFileId() {
         all_file_id.emplace_back(c.first);
     }
     return all_file_id;
+}
+
+void CSLServer::Preload(ifstream &file) {
+
 }
 
 size_t CSLServer::findSize(const string &file_id) {
