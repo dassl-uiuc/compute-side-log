@@ -41,19 +41,26 @@ class CSLClient {
     friend void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
 
     struct CombinedRequestToken {
+        Context *ctx_;
         RequestToken data_token_;
         RequestToken seq_token_;
         atomic<bool> all_prev_completed_;
 
-        CombinedRequestToken(Context *ctx) : data_token_(ctx), seq_token_(ctx), all_prev_completed_(false) {}
+        CombinedRequestToken(Context *ctx) : ctx_(ctx), data_token_(ctx), seq_token_(ctx), all_prev_completed_(false) {}
 
         void WaitUntilBothCompleted() {
-            data_token_.waitUntilCompleted();
-            seq_token_.waitUntilCompleted();
+            while (!data_token_.completed.load() || !seq_token_.completed.load()) {
+                ctx_->pollTwoSendCompletion();
+            }
         }
 
         bool CheckIfBothCompleted() {
-            return data_token_.checkIfCompleted() && seq_token_.checkIfCompleted();
+            if (data_token_.completed.load() && seq_token_.completed.load()) {
+                return true;
+            } else {
+                ctx_->pollTwoSendCompletion();
+                return (data_token_.completed.load() && seq_token_.completed.load());
+            }
         }
 
         bool CheckAllPrevCompleted() {
