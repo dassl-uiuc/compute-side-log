@@ -282,6 +282,7 @@ ssize_t CSLClient::Append(const void *buf, size_t size) {
 
 ssize_t CSLClient::WritePos(const void *buf, size_t size, off_t pos) {
     size = min(size, buffer->getSizeInBytes() - pos);
+    file_size = max(pos + size, file_size.load());
     memcpy((char *)buffer->getAddress() + pos, buf, size);
 #if USE_QUORUM_WRITE
     WriteQuorum(pos, pos, size);

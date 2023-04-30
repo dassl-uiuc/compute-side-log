@@ -55,6 +55,8 @@ static original_fread_t original_fread = reinterpret_cast<original_fread_t>(dlsy
 static original_fread_t original_fread_unlocked =
     reinterpret_cast<original_fread_t>(dlsym(RTLD_NEXT, "fread_unlocked"));
 static original_feof_t original_feof = reinterpret_cast<original_feof_t>(dlsym(RTLD_NEXT, "feof"));
+static original_fclose_t original_fclose = reinterpret_cast<original_fclose_t>(dlsym(RTLD_NEXT, "fclose"));
+static original_fopen_t original_fopen = reinterpret_cast<original_fopen_t>(dlsym(RTLD_NEXT, "fopen"));
 
 static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
 static std::unordered_map<std::string, shared_ptr<CSLClient> > csl_path_cli;
@@ -63,6 +65,9 @@ static CSLClientPool pool;
 
 void getClient(const char *pathname, int flags, int fd) {
     if (__IS_COMP_SIDE_LOG(flags) && (fd >= 0)) {
+#ifdef CSL_DEBUG
+        printf("get client for fd %d, pathname %s\n", fd, pathname);
+#endif
         std::shared_ptr<CSLClient> csl_client;
         if (csl_path_cli.find(pathname) != csl_path_cli.end()) {
             csl_client = csl_path_cli[pathname];
@@ -377,4 +382,31 @@ int feof(FILE *stream) {
         csl_lock.unlock();
         return original_feof(stream);
     }
+}
+
+
+int fclose(FILE *stream) {
+    int fd = fileno(stream);
+    if (original_fclose == nullptr)
+        original_fclose = reinterpret_cast<original_fclose_t>(dlsym(RTLD_NEXT, "fclose"));
+    
+    if (fd < 5)  // todo: fix this workaround
+        return original_fclose(stream);
+
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        csl_lock.unlock();
+#if RECYCLE_ON_DELETE
+#else
+        pool.RecycleClient(it->second->GetId());
+#endif
+#ifdef CSL_DEBUG
+        printf("compute side log fclose, fd %d\n", fd);
+#endif
+        csl_lock.lock();
+        csl_fd_cli.erase(it);
+    }
+    csl_lock.unlock();
+    return original_fclose(stream);
 }
