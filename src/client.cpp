@@ -17,6 +17,8 @@ int main() {
 
     // client1.Append(test_buf, 128);
     client2.Append(test_buf, 128);
+    client2.Append(test_buf, 128);
+    client2.Append(test_buf, 128);
     char get;
     std::cin >> get;
 

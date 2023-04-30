@@ -35,13 +35,40 @@
 
 using namespace std;
 
+using infinity::requests::RequestToken;
+
 class CSLClient {
     friend void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
+
+    struct CombinedRequestToken {
+        RequestToken data_token_;
+        RequestToken seq_token_;
+        atomic<bool> all_prev_completed_;
+
+        CombinedRequestToken(Context *ctx) : data_token_(ctx), seq_token_(ctx), all_prev_completed_(false) {}
+
+        void WaitUntilBothCompleted() {
+            data_token_.waitUntilCompleted();
+            seq_token_.waitUntilCompleted();
+        }
+
+        bool CheckIfBothCompleted() {
+            return data_token_.checkIfCompleted() && seq_token_.checkIfCompleted();
+        }
+
+        bool CheckAllPrevCompleted() {
+            return all_prev_completed_.load();
+        }
+
+        void SetAllPrevCompleted() {
+            all_prev_completed_.store(true);
+        }
+    };
     struct RemoteConData {
         shared_ptr<infinity::queues::QueuePair> qp;
         infinity::memory::RegionToken *remote_buffer_token;
         int socket;
-        queue<shared_ptr<infinity::requests::RequestToken> > op_queue;
+        queue<shared_ptr<CombinedRequestToken> > op_queue;
     };
 
    protected:
@@ -61,12 +88,15 @@ class CSLClient {
     int rep_factor;
     size_t buf_size;
     atomic<size_t> buf_offset;
-    atomic<size_t> file_size;
+    size_t file_size;
+    atomic<uint64_t> seq;
     bool in_use;
     uint32_t id;
     string filename;
     mutex recover_lock;
 
+    uint64_t *seq_addr;
+    uint64_t seq_offset;
     zhandle_t *zh;
 
    public:
@@ -97,8 +127,13 @@ class CSLClient {
     ssize_t Append(const void *buf, size_t size);
 
     /**
+     * Write to specified position in the log.
+     * Behavior of this call is expected to be consistent with glibc PWRITE(2)
      * 
-    */
+     * @param buf pointer to the data to be written
+     * @param size size of data to be written
+     * @param pos offset from which data is written
+     */
     ssize_t WritePos(const void *buf, size_t size, off_t pos);
 
     /**
@@ -112,8 +147,13 @@ class CSLClient {
     ssize_t Read(void *buf, size_t size);
 
     /**
+     * Read from specified position in the log.
+     * Behavior of this call is expected to be consistent with glibc PREAD(2)
      * 
-    */
+     * @param buf pointer to the returned data
+     * @param size size of data to be read
+     * @param pos offset from which data is read
+     */
     ssize_t ReadPos(void *buf, size_t size, off_t pos);
 
     /**
@@ -123,8 +163,11 @@ class CSLClient {
     off_t Seek(off_t offset, int whence);
 
     /**
+     * Truncate the log to the given length
+     * Behavior of this call is expected to be consistent with glibc TRUNCATE(2)
      * 
-    */
+     * @param length length to truncate to
+     */
     int Truncate(off_t length);
 
     int Eof() { return buf_offset >= file_size ? 1 : 0; }
@@ -166,13 +209,13 @@ class CSLClient {
     void SetFileInfo(const char *name, size_t size);
 
     /**
-     * 
-    */
+     *
+     */
     void TryRecover();
 
     /**
-     * 
-    */
+     *
+     */
     void TryLocalRecover(int fd);
 
     const set<string> &GetPeers() { return peers; }
@@ -184,7 +227,7 @@ class CSLClient {
     void init(set<string> host_addresses);
     void createClientZKNode();
 
-    bool quorumCompleted(vector<shared_ptr<infinity::requests::RequestToken> > &tokens);
+    bool quorumCompleted(vector<shared_ptr<CombinedRequestToken> > &tokens);
 
     /**
      * @return number of peers already exists for this client. If this is the first time the client
@@ -232,7 +275,8 @@ class CSLClient {
      */
     const string getZkNodeName() {
         // ? a zk node for each client machine or a zk node for each file?
-        // return QueuePairFactory::getIpAddress() + ":" + to_string(hash<string>()(filename));  // e.g. "10.0.0.1:1234567890"
+        // return QueuePairFactory::getIpAddress() + ":" + to_string(hash<string>()(filename));  // e.g.
+        // "10.0.0.1:1234567890"
         return QueuePairFactory::getIpAddress();
     }
 

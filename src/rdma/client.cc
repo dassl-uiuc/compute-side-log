@@ -22,7 +22,6 @@
 #define USE_QUORUM_WRITE    1
 
 using infinity::queues::QueuePairFactory;
-using infinity::requests::RequestToken;
 
 CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, set<string> host_addresses,
                      size_t buf_size, uint32_t id, const char *name)
@@ -33,6 +32,7 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
       buf_size(buf_size),
       buf_offset(0),
       file_size(0),
+      seq(0),
       in_use(false),
       id(id),
       filename(name),
@@ -49,6 +49,7 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
       buf_size(buf_size),
       buf_offset(0),
       file_size(0),
+      seq(0),
       in_use(false),
       id(id),
       filename(name),
@@ -94,6 +95,8 @@ void CSLClient::init(set<string> host_addresses) {
 
     LOG(INFO) << "Creating buffers";
     buffer = mr_pool->GetMRofSize(buf_size);
+    seq_offset = buf_size - sizeof(uint64_t);
+    seq_addr = reinterpret_cast<uint64_t *>(buffer->getAddressWithOffset(seq_offset));
     LOG(INFO) << "csl client " << id << " created, buffer size " << buf_size;
 }
 
@@ -192,22 +195,31 @@ void CSLClient::ReadSync(uint64_t local_off, uint64_t remote_off, uint32_t size)
 }
 
 void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size) {
-    vector<shared_ptr<RequestToken> > request_tokens;
+    vector<shared_ptr<CombinedRequestToken> > combined_req_tokens;
+    uint64_t local_offs[2] = {local_off, seq_offset};
+    uint64_t remote_offs[2] = {remote_off, seq_offset};
+    uint32_t sizes[2] = {size, sizeof(uint64_t)};
+
     for (auto &p : remote_props) {
-        auto token = make_shared<RequestToken>(context);
-        request_tokens.emplace_back(token);
-        p.second.qp->write(buffer.get(), local_off, p.second.remote_buffer_token, remote_off, size, token.get());
+        auto token = make_shared<CombinedRequestToken>(context);
+        combined_req_tokens.emplace_back(token);
+        RequestToken *tokens[2] = {&token->data_token_, &token->seq_token_};
+        p.second.qp->writeTwoPlace(buffer.get(), local_offs, p.second.remote_buffer_token, remote_offs, sizes, tokens);
     }
 
-    for (auto token : request_tokens) {
-        token->waitUntilCompleted();
+    for (auto token : combined_req_tokens) {
+        token->WaitUntilBothCompleted();
     }
 }
 
 void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t size) {
-    vector<shared_ptr<RequestToken> > request_tokens;
+    vector<shared_ptr<CombinedRequestToken> > request_tokens;
+    uint64_t local_offs[2] = {local_off, seq_offset};
+    uint64_t remote_offs[2] = {remote_off, seq_offset};
+    uint32_t sizes[2] = {size, sizeof(uint64_t)};
+    
     for (auto &p : remote_props) {
-        auto token = make_shared<RequestToken>(context);
+        auto token = make_shared<CombinedRequestToken>(context);
         request_tokens.emplace_back(token);
         {
 #if ASYNC_QUORUM_POLL
@@ -215,7 +227,8 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
 #endif
             p.second.op_queue.push(token);
         }
-        p.second.qp->write(buffer.get(), local_off, p.second.remote_buffer_token, remote_off, size, token.get());
+        RequestToken *tokens[2] = {&token->data_token_, &token->seq_token_};
+        p.second.qp->writeTwoPlace(buffer.get(), local_offs, p.second.remote_buffer_token, remote_offs, sizes, tokens);
     }
 
     do {
@@ -226,8 +239,8 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
             auto &op_q = p.second.op_queue;
             if (op_q.empty())
                 continue;
-            if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed
-                op_q.back()->setAllPrevCompleted();
+            if (op_q.back()->CheckIfBothCompleted()) {  // will poll CQ once if not completed
+                op_q.back()->SetAllPrevCompleted();
                 op_q.pop();
             }
         }
@@ -235,10 +248,10 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
     } while (!quorumCompleted(request_tokens));
 }
 
-bool CSLClient::quorumCompleted(vector<shared_ptr<infinity::requests::RequestToken>> &tokens) {
+bool CSLClient::quorumCompleted(vector<shared_ptr<CombinedRequestToken>> &tokens) {
     uint n = 0;
     for (auto &t : tokens) {
-        if (t->checkAllPrevCompleted()) n++;
+        if (t->CheckAllPrevCompleted()) n++;
         if (n > remote_props.size() / 2) return true;
     }
     return false;
@@ -255,8 +268,8 @@ void CSLClient::CQPollingFunc() {
 #if ASYNC_QUORUM_POLL
                 lock_guard<mutex> lk(poll_lock);
 #endif
-                if (op_q.back()->checkIfCompleted()) {  // will poll CQ once if not completed
-                    op_q.back()->setAllPrevCompleted();
+                if (op_q.back()->CheckIfBothCompleted()) {  // will poll CQ once if not completed
+                    op_q.back()->SetAllPrevCompleted();
                     op_q.pop();
                 }
             }
@@ -266,12 +279,11 @@ void CSLClient::CQPollingFunc() {
 }
 
 ssize_t CSLClient::Append(const void *buf, size_t size) {
-    // disable new append during recovering
-    // lock_guard<mutex> guard(recover_lock);  // TODO: enable async recovery
     size = min(size, buffer->getSizeInBytes() - buf_offset);
     size_t cur_off = buf_offset.fetch_add(size);
-    file_size = max(file_size.load(), buf_offset.load());
+    file_size = max(file_size, buf_offset.load());
     memcpy((char *)buffer->getAddress() + cur_off, buf, size);
+    *seq_addr = seq.fetch_add(1);
 #if USE_QUORUM_WRITE
     WriteQuorum(cur_off, cur_off, size);
 #else
@@ -282,8 +294,9 @@ ssize_t CSLClient::Append(const void *buf, size_t size) {
 
 ssize_t CSLClient::WritePos(const void *buf, size_t size, off_t pos) {
     size = min(size, buffer->getSizeInBytes() - pos);
-    file_size = max(pos + size, file_size.load());
+    file_size = max(pos + size, file_size);
     memcpy((char *)buffer->getAddress() + pos, buf, size);
+    *seq_addr = seq.fetch_add(1);
 #if USE_QUORUM_WRITE
     WriteQuorum(pos, pos, size);
 #else
