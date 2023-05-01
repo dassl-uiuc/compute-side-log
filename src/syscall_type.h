@@ -22,4 +22,5 @@ using original_fclose_t = int (*)(FILE *);
 using original_fseek_t = int (*)(FILE *, long, int);
 using original_ftell_t = int (*)(FILE *);
 using original_fgets_t = char *(*)(char *, int, FILE *);
-using original_fstat_t = int (*)(int, int, struct stat *);
+using original_fstat64_t = int (*)(int, int, struct stat64 *);
+using original_stat64_t = int (*)(int, const char *, struct stat64 *);

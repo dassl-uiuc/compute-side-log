@@ -62,11 +62,26 @@ static original_fopen_t original_fopen64 = reinterpret_cast<original_fopen_t>(dl
 static original_fseek_t original_fseek = reinterpret_cast<original_fseek_t>(dlsym(RTLD_NEXT, "fseek"));
 static original_ftell_t original_ftello64 = reinterpret_cast<original_ftell_t>(dlsym(RTLD_NEXT, "ftello64"));
 static original_fgets_t original_fgets = reinterpret_cast<original_fgets_t>(dlsym(RTLD_NEXT, "fgets"));
+static original_fstat64_t original_fstat64 = reinterpret_cast<original_fstat64_t>(dlsym(RTLD_NEXT, "__fxstat64"));
+static original_stat64_t original_stat64 = reinterpret_cast<original_stat64_t>(dlsym(RTLD_NEXT, "__xstat64"));
 
 static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
 static std::unordered_map<std::string, shared_ptr<CSLClient> > csl_path_cli;
 static std::mutex csl_lock;
 static CSLClientPool pool;
+
+/*
+ * This struct is to tell whether the static variables such as the hash maps have been constructed or evaluated, if not,
+ * we shall not use them. Otherwise using a uninitialized hash map will raise an exception. This is because although the
+ * hash maps above are declared as static variables and are initialized before program entry point, some glibc functions
+ * such fclose are called even earlier than the static variables are initialized. At that time we must not access the
+ * hash map (since it's uninitialized) and there is no need to check the hash map as there is no NCL logs opened at that
+ * time. Instead, we directly use the original implementation of those glibc functions.
+ */
+static struct InitializeIndicator {
+    bool initialized;
+    InitializeIndicator() { initialized = true; }
+} init_d;
 
 void getClient(const char *pathname, int flags, int fd) {
     if (__IS_COMP_SIDE_LOG(flags) && (fd >= 0)) {
@@ -323,9 +338,9 @@ int fseek(FILE *stream, long offset, int whence) {
     if (it != csl_fd_cli.end()) {
         auto cli = it->second;
         csl_lock.unlock();
-// #ifdef CSL_DEBUG
+#ifdef CSL_DEBUG
         printf("compute side log fseek, fd %d, offset %ld, whence %d\n", fd, offset, whence);
-// #endif
+#endif
         return cli->Seek(offset, whence);
     } else {
         csl_lock.unlock();
@@ -342,14 +357,14 @@ off_t ftello64(FILE *stream) {
         auto cli = it->second;
         csl_lock.unlock();
         size_t pos = cli->GetOffset();
-// #ifdef CSL_DEBUG
+#ifdef CSL_DEBUG
         printf("compute side log ftello64, fd %d, pos %ld\n", fd, pos);
-// #endif
+#endif
         return pos;
     } else {
         csl_lock.unlock();
         return original_ftello64(stream);
-    }   
+    }
 }
 
 int ftruncate_internal(int fd, off_t length, original_ftruncate_t ftruncate_impl) {
@@ -417,9 +432,9 @@ char *fgets(char *s, int size, FILE *stream) {
     if (it != csl_fd_cli.end()) {
         auto cli = it->second;
         csl_lock.unlock();
-// #ifdef CSL_DEBUG
+#ifdef CSL_DEBUG
         printf("compute side log fgets, fd: %d\n", fd);
-// #endif
+#endif
         return cli->GetLine(s, size);
     } else {
         csl_lock.unlock();
@@ -451,9 +466,9 @@ FILE *fopen_internal(const char *pathname, const char *mode, original_fopen_t fo
         int fd = fileno(fp);
         int mode_len = strlen(mode);
         if (mode[mode_len - 1] == 'l') {
-// #ifdef CSL_DEBUG
+#ifdef CSL_DEBUG
             printf("compute side log fopen, fd %d, path %s, mode %s\n", fd, pathname, mode);
-// #endif
+#endif
             getClient(pathname, O_CSL, fd);
         }
     }
@@ -477,11 +492,11 @@ FILE *fopen64(const char *pathname, const char *mode) {
 
 int fclose(FILE *stream) {
     int fd = fileno(stream);
-    if (original_fclose == nullptr)
-        original_fclose = reinterpret_cast<original_fclose_t>(dlsym(RTLD_NEXT, "fclose"));
-    
-    if (fd < 5)  // todo: fix this workaround
+    if (original_fclose == nullptr) original_fclose = reinterpret_cast<original_fclose_t>(dlsym(RTLD_NEXT, "fclose"));
+
+    if (!init_d.initialized) {
         return original_fclose(stream);
+    }
 
     csl_lock.lock();
     auto it = csl_fd_cli.find(fd);
@@ -499,4 +514,45 @@ int fclose(FILE *stream) {
     }
     csl_lock.unlock();
     return original_fclose(stream);
+}
+
+int __fxstat64(int vers, int fd, struct stat64 *buf) {
+    if (original_fstat64 == nullptr) {
+        original_fstat64 = reinterpret_cast<original_fstat64_t>(dlsym(RTLD_NEXT, "__fxstat64"));
+    }
+
+    int ret = original_fstat64(vers, fd, buf);
+
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
+        buf->st_size = cli->GetFileSize();
+#ifdef CSL_DEBUG
+        printf("compute side log fstat, fd %d, size %ld\n", fd, buf->st_size);
+#endif
+    } else {
+        csl_lock.unlock();
+    }
+
+    return ret;
+}
+
+int __xstat64(int vers, const char *name, struct stat64 *buf) {
+    if (original_stat64 == nullptr) {
+        original_stat64 = reinterpret_cast<original_stat64_t>(dlsym(RTLD_NEXT, "__xstat64"));
+    }
+
+    int ret = original_stat64(vers, name, buf);
+    auto it = csl_path_cli.find(name);
+    if (it != csl_path_cli.end()) {
+        auto cli = it->second;
+        buf->st_size = cli->GetFileSize();
+#ifdef CSL_DEBUG
+        printf("compute side log stat, path %s, size %ld\n", name, buf->st_size);
+#endif
+    }
+
+    return ret;
 }
