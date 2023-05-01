@@ -56,7 +56,7 @@ class CSLServer {
     int GetConnectionCount() { return local_cons.size(); }
     vector<string> GetAllFileId();
     void *GetBufData(const string &fileid) { return local_cons[fileid].buffer->getData(); }
-    size_t GetBufSize(const string &fileid) {  return local_cons[fileid].buffer->getSizeInBytes(); }
+    uint64_t ReadSeqNum(const string &fileid);
     void Stop() { stop = true; }
     void Preload(ifstream &file);
 

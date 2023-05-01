@@ -15,6 +15,7 @@
 #include <fcntl.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <sys/uio.h>
 #include <unistd.h>
 
@@ -57,6 +58,10 @@ static original_fread_t original_fread_unlocked =
 static original_feof_t original_feof = reinterpret_cast<original_feof_t>(dlsym(RTLD_NEXT, "feof"));
 static original_fclose_t original_fclose = reinterpret_cast<original_fclose_t>(dlsym(RTLD_NEXT, "fclose"));
 static original_fopen_t original_fopen = reinterpret_cast<original_fopen_t>(dlsym(RTLD_NEXT, "fopen"));
+static original_fopen_t original_fopen64 = reinterpret_cast<original_fopen_t>(dlsym(RTLD_NEXT, "fopen64"));
+static original_fseek_t original_fseek = reinterpret_cast<original_fseek_t>(dlsym(RTLD_NEXT, "fseek"));
+static original_ftell_t original_ftello64 = reinterpret_cast<original_ftell_t>(dlsym(RTLD_NEXT, "ftello64"));
+static original_fgets_t original_fgets = reinterpret_cast<original_fgets_t>(dlsym(RTLD_NEXT, "fgets"));
 
 static std::unordered_map<int, shared_ptr<CSLClient> > csl_fd_cli;
 static std::unordered_map<std::string, shared_ptr<CSLClient> > csl_path_cli;
@@ -310,6 +315,43 @@ off_t lseek(int fd, off_t offset, int whence) {
     }
 }
 
+int fseek(FILE *stream, long offset, int whence) {
+    int fd = fileno(stream);
+
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
+// #ifdef CSL_DEBUG
+        printf("compute side log fseek, fd %d, offset %ld, whence %d\n", fd, offset, whence);
+// #endif
+        return cli->Seek(offset, whence);
+    } else {
+        csl_lock.unlock();
+        return original_fseek(stream, offset, whence);
+    }
+}
+
+off_t ftello64(FILE *stream) {
+    int fd = fileno(stream);
+
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
+        size_t pos = cli->GetOffset();
+// #ifdef CSL_DEBUG
+        printf("compute side log ftello64, fd %d, pos %ld\n", fd, pos);
+// #endif
+        return pos;
+    } else {
+        csl_lock.unlock();
+        return original_ftello64(stream);
+    }   
+}
+
 int ftruncate_internal(int fd, off_t length, original_ftruncate_t ftruncate_impl) {
     csl_lock.lock();
     auto it = csl_fd_cli.find(fd);
@@ -367,6 +409,24 @@ size_t fread_unlocked(void *ptr, size_t size, size_t nmemb, FILE *stream) {
     return fread_internal(ptr, size, nmemb, stream, original_fread_unlocked);
 }
 
+char *fgets(char *s, int size, FILE *stream) {
+    int fd = fileno(stream);
+
+    csl_lock.lock();
+    auto it = csl_fd_cli.find(fd);
+    if (it != csl_fd_cli.end()) {
+        auto cli = it->second;
+        csl_lock.unlock();
+// #ifdef CSL_DEBUG
+        printf("compute side log fgets, fd: %d\n", fd);
+// #endif
+        return cli->GetLine(s, size);
+    } else {
+        csl_lock.unlock();
+        return original_fgets(s, size, stream);
+    }
+}
+
 int feof(FILE *stream) {
     int fd = fileno(stream);
 
@@ -384,6 +444,36 @@ int feof(FILE *stream) {
     }
 }
 
+FILE *fopen_internal(const char *pathname, const char *mode, original_fopen_t fopen_impl) {
+    FILE *fp = fopen_impl(pathname, mode);
+
+    if (fp) {
+        int fd = fileno(fp);
+        int mode_len = strlen(mode);
+        if (mode[mode_len - 1] == 'l') {
+// #ifdef CSL_DEBUG
+            printf("compute side log fopen, fd %d, path %s, mode %s\n", fd, pathname, mode);
+// #endif
+            getClient(pathname, O_CSL, fd);
+        }
+    }
+
+    return fp;
+}
+
+FILE *fopen(const char *pathname, const char *mode) {
+    if (original_fopen == nullptr) {
+        original_fopen = reinterpret_cast<original_fopen_t>(dlsym(RTLD_NEXT, "fopen"));
+    }
+    return fopen_internal(pathname, mode, original_fopen);
+}
+
+FILE *fopen64(const char *pathname, const char *mode) {
+    if (original_fopen64 == nullptr) {
+        original_fopen64 = reinterpret_cast<original_fopen_t>(dlsym(RTLD_NEXT, "fopen64"));
+    }
+    return fopen_internal(pathname, mode, original_fopen64);
+}
 
 int fclose(FILE *stream) {
     int fd = fileno(stream);

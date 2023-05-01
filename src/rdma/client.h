@@ -177,6 +177,11 @@ class CSLClient {
      */
     int Truncate(off_t length);
 
+    /**
+     * 
+     */
+    char *GetLine(char *s, int size);
+
     int Eof() { return buf_offset >= file_size ? 1 : 0; }
 
     void *GetBufData() { return buffer->getData(); }
@@ -227,6 +232,8 @@ class CSLClient {
 
     const set<string> &GetPeers() { return peers; }
     size_t GetBufSize() { return buf_size; }
+    size_t GetFileSize() { return file_size; }
+    size_t GetOffset() { return buf_offset.load(); }
     void SetInUse(bool is_inuse) { in_use = is_inuse; }
     uint32_t GetId() { return id; }
 

@@ -30,10 +30,7 @@ int main(int argc, char *argv[]) {
         cout << "total client: " << server.GetConnectionCount() << endl;
         vector<string> all_files = server.GetAllFileId();
         for (auto &f : all_files) {
-            cout << "file " << f << ", sequence: "
-                 << *reinterpret_cast<uint64_t *>((uint64_t)server.GetBufData(f) + server.GetBufSize(f) -
-                                                  sizeof(uint64_t))
-                 << endl;
+            cout << "file " << f << ", sequence: " << server.ReadSeqNum(f) << endl;
             char *buf = (char *)server.GetBufData(f);
             for (int j = 0; j < 128; j++) cout << buf[j];
             cout << endl;

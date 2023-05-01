@@ -19,3 +19,7 @@ using original_fread_t = size_t (*)(void *, size_t, size_t, FILE *);
 using original_feof_t = int (*)(FILE *);
 using original_fopen_t = FILE* (*)(const char *, const char *);
 using original_fclose_t = int (*)(FILE *);
+using original_fseek_t = int (*)(FILE *, long, int);
+using original_ftell_t = int (*)(FILE *);
+using original_fgets_t = char *(*)(char *, int, FILE *);
+using original_fstat_t = int (*)(int, int, struct stat *);

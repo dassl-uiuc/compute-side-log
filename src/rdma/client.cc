@@ -163,7 +163,7 @@ void CSLClient::createClientZKNode() {
 }
 
 CSLClient::~CSLClient() {
-    int ret;
+    int ret = 0;
 
 #if USE_QUORUM_WRITE && ASYNC_QUORUM_POLL
     run = false;
@@ -327,13 +327,13 @@ ssize_t CSLClient::ReadPos(void *buf, size_t size, off_t pos) {
 off_t CSLClient::Seek(off_t offset, int whence) {
     switch (whence) {
         case SEEK_SET:
-            buf_offset = min((size_t)offset, buffer->getSizeInBytes() - 1);
+            buf_offset.store(min((size_t)offset, buffer->getSizeInBytes() - 1));
             break;
         case SEEK_CUR:
-            buf_offset = min((size_t)(offset + buf_offset), buffer->getSizeInBytes() - 1);
+            buf_offset.store(min((size_t)(offset + buf_offset), buffer->getSizeInBytes() - 1));
             break;
         case SEEK_END:
-            // TODO: need to know the current size of file (not buffer size)
+            buf_offset.store(file_size);
             break;
         default:
             LOG(WARNING) << "whence " << whence << " is not supported";
@@ -343,11 +343,34 @@ off_t CSLClient::Seek(off_t offset, int whence) {
 
 int CSLClient::Truncate(off_t length) {
     // todo: currently we do not maintain the size so no action is taken to adjust the size
+    file_size = length;
     LOG(INFO) << "current size " << buf_offset << " truncate to " << length;
     if (length < buf_offset) {
         memset((char*)buffer->getData() + length, 0, buf_offset.exchange(length) - length);
     }
     return 0;
+    
+}
+
+char *CSLClient::GetLine(char *s, int size) {
+    if (Eof())
+        return nullptr;
+
+    char *p = reinterpret_cast<char *>(buffer->getAddress() + buf_offset);
+    size_t cur_off = buf_offset.load();
+    int len = 0;
+    while (len < size - 1) {
+        ++len;
+        if (*(p + len) == '\n') {
+            ++len;
+            break;
+        } else if (cur_off + len >= file_size)
+            break;
+    }
+    memcpy((void *)s, p, len);
+    *reinterpret_cast<char *>(s + len) = '\0';
+    buf_offset.fetch_add(len);
+    return s;
 }
 
 void CSLClient::Reset() {

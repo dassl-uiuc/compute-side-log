@@ -206,7 +206,7 @@ int CSLServer::handleClientRequest(int socket) {
                 LOG(ERROR) << "[EXIT PROC] can't find QP with socket: " << socket;
                 break;
             }
-            existing_qps.erase(it_qp);
+            ret = 0;
             LOG(INFO) << "[EXIT PROC] File: " << file_id << " finalized with QP (socket=" << socket << ") destroyed";
             break;
         case GET_INFO:
@@ -239,6 +239,11 @@ vector<string> CSLServer::GetAllFileId() {
     return all_file_id;
 }
 
+uint64_t CSLServer::ReadSeqNum(const string &fileid) {
+    auto buf = local_cons[fileid].buffer;
+    return *reinterpret_cast<uint64_t *>(buf->getAddress() + buf->getSizeInBytes() - sizeof(uint64_t));
+}
+
 void CSLServer::Preload(ifstream &file) {
 
 }
@@ -248,7 +253,7 @@ size_t CSLServer::findSize(const string &file_id) {
 
     auto &mr = local_cons[file_id].buffer;
     char *mr_begin = reinterpret_cast<char *>(mr->getData());
-    char *buf = mr_begin + mr->getSizeInBytes() - 1;  // points to the end of the MR
+    char *buf = mr_begin + mr->getSizeInBytes() - sizeof(uint64_t) - 1;  // points to the end of the MR, ignore sequence number
     while (buf >= mr_begin) {
         if (*buf != 0) break;  // todo
         buf--;
