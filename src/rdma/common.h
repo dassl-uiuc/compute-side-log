@@ -25,3 +25,8 @@ struct ClientReq {
     int type;
     FileInfo fi;
 }__attribute__((packed));
+
+struct ServerResp {
+    size_t size;
+    uint64_t seq;
+};

@@ -155,6 +155,7 @@ void CSLServer::handleIncomingConnection() {
 
 int CSLServer::handleClientRequest(int socket) {
     ClientReq req;
+    ServerResp resp;
     int ret;
 
     ret = recv(socket, &req, sizeof(req), 0);
@@ -166,7 +167,6 @@ int CSLServer::handleClientRequest(int socket) {
     auto it = local_cons.find(file_id);
     auto it_qp = existing_qps.find(socket);
     LocalConData new_con;
-    size_t size = 0;
     switch (req.type) {
         case OPEN_FILE:
             if (it != local_cons.end()) {
@@ -211,11 +211,12 @@ int CSLServer::handleClientRequest(int socket) {
             break;
         case GET_INFO:
             if (it != local_cons.end()) {
-                size = findSize(file_id);
+                resp.size = findSize(file_id);
+                resp.seq = ReadSeqNum(file_id);
             } else {
                 LOG(ERROR) << "[GET INFO] can't find file id: " << file_id;
             }
-            send(it->second.qp->getRemoteSocket(), &size, sizeof(size), 0);
+            send(it->second.qp->getRemoteSocket(), &resp, sizeof(resp), 0);
             break;
         default:
             LOG(ERROR) << "Unknown request type" << req.type;

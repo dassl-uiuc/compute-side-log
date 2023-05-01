@@ -463,25 +463,27 @@ bool CSLClient::recoverPeer(const string &new_peer) {
 
 tuple<string, size_t> CSLClient::getRecoverSrcPeer() {
     const string file_id = getFileIdentifier();
-    size_t min_size = UINT64_MAX;
+    uint64_t min_seq = UINT64_MAX;
+    size_t recover_size;
     string ip_recover_src;
     for (auto &p : remote_props) {
         struct ClientReq getinfo_req;
-        size_t size = 0;
+        struct ServerResp getinfo_resp;
 
         getinfo_req.type = GET_INFO;
         getinfo_req.fi.size = 0;
         strcpy(getinfo_req.fi.file_id, file_id.c_str());
         send(p.second.socket, &getinfo_req, sizeof(getinfo_req), 0);
-        recv(p.second.socket, &size, sizeof(size), 0);
-        if (size != 0 && size < min_size) {
-            min_size = size;
+        recv(p.second.socket, &getinfo_resp, sizeof(getinfo_resp), 0);
+        if (getinfo_resp.seq != 0 && getinfo_resp.seq < min_seq) {
+            min_seq = getinfo_resp.seq;
+            recover_size = getinfo_resp.size;
             ip_recover_src = p.first;
         }
     }
-    if (min_size == UINT64_MAX)
-        min_size = 0;  // none server has replication for this file 
-    return make_tuple(ip_recover_src, min_size);
+    if (min_seq == UINT64_MAX)
+        recover_size = 0;  // none server has replication for this file 
+    return make_tuple(ip_recover_src, recover_size);
 }
 
 void CSLClient::recoverFromSrc(string &recover_src, size_t size) {
