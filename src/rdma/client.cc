@@ -239,8 +239,8 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
             auto &op_q = p.second.op_queue;
             if (op_q.empty())
                 continue;
-            if (op_q.back()->CheckIfBothCompleted()) {  // will poll CQ once if not completed
-                op_q.back()->SetAllPrevCompleted();
+            if (op_q.front()->CheckIfBothCompleted()) {  // will poll CQ once if not completed
+                op_q.front()->SetAllPrevCompleted();
                 op_q.pop();
             }
         }
@@ -268,8 +268,8 @@ void CSLClient::CQPollingFunc() {
 #if ASYNC_QUORUM_POLL
                 lock_guard<mutex> lk(poll_lock);
 #endif
-                if (op_q.back()->CheckIfBothCompleted()) {  // will poll CQ once if not completed
-                    op_q.back()->SetAllPrevCompleted();
+                if (op_q.front()->CheckIfBothCompleted()) {  // will poll CQ once if not completed
+                    op_q.front()->SetAllPrevCompleted();
                     op_q.pop();
                 }
             }
