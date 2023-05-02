@@ -13,3 +13,11 @@ git checkout v0.6.0
 cmake -S . -B build
 cmake --build build
 sudo cmake --build build --target install
+
+# install zookeeper
+sudo apt install maven libcppunit-dev -y
+cd ../zookeeper/zookeeper-jute && mvn compile && cd ..
+cd zookeeper-client/zookeeper-client-c
+autoreconf -if
+./configure --with-syncapi
+make && sudo make install
