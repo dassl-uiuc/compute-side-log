@@ -178,7 +178,8 @@ class CSLClient {
     int Truncate(off_t length);
 
     /**
-     * 
+     * Get a line from the log content.
+     * Behavior of this call is expected to be consistent with glibc FGETS(3)
      */
     char *GetLine(char *s, int size);
 
@@ -221,12 +222,13 @@ class CSLClient {
     void SetFileInfo(const char *name, size_t size);
 
     /**
-     *
+     * Try to recover log content from an available replication peer
      */
     void TryRecover();
 
     /**
-     *
+     * Experiment API.
+     * Try to recover log content from a local file. 
      */
     void TryLocalRecover(int fd);
 
@@ -248,6 +250,7 @@ class CSLClient {
      * connects to ZK, 0 will be returned
      */
     int getPeersFromZK(set<string> &peer_ips);
+    
     /**
      * Remove a replication peer from the client and add a new replication peer
      * @param old_addr address of the peer to be removed
@@ -276,6 +279,8 @@ class CSLClient {
      * @param size size to get from the replication server
      */
     void recoverFromSrc(string &recover_src, size_t size);
+
+    void watchForPeerJoin();
 
     /**
      * A human-readable unique identifier of each file

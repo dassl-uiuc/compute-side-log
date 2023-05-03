@@ -5,6 +5,7 @@
 #include <zookeeper/zookeeper.h>
 
 using std::string;
+using std::stringstream;
 using std::set;
 
 static const char* state2String(int state){
@@ -71,4 +72,14 @@ int parseIpString(string &peers_str, set<string> &peers) {
     cnt++;
   } while(next_pos != -1);
   return cnt;
+}
+
+string getPeerFromPath(const char *path) {
+  string peer;
+  stringstream pathss(path);
+  // node path: /servers/<peer>
+  getline(pathss, peer, '/');
+  getline(pathss, peer, '/');
+  getline(pathss, peer, '/');
+  return peer;
 }

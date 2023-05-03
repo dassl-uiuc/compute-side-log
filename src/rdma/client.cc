@@ -252,7 +252,7 @@ bool CSLClient::quorumCompleted(vector<shared_ptr<CombinedRequestToken>> &tokens
     uint n = 0;
     for (auto &t : tokens) {
         if (t->CheckAllPrevCompleted()) n++;
-        if (n > remote_props.size() / 2) return true;
+        if (n > rep_factor / 2) return true;
     }
     return false;
 }
@@ -409,18 +409,20 @@ string CSLClient::replacePeer(string &old_addr) {
     struct String_vector peerv;
     int ret, i;
 
-    // remove old peer
-    auto it = remote_props.find(old_addr);
-    if (it == remote_props.end()) {
-        LOG(ERROR) << "Peer " << old_addr << " not connected.";
-        return "";
-    }
+    if (!old_addr.empty()) {
+        // remove old peer
+        auto it = remote_props.find(old_addr);
+        if (it == remote_props.end()) {
+            LOG(ERROR) << "Peer " << old_addr << " not connected.";
+            return "";
+        }
 
-    // qp_pool->RecycleQp(it->second.qp);
-    // drop qp and not recycle since it's disconnected ? can we recycle it?
-    remote_props.erase(it);
-    peers.erase(old_addr);
-    LOG(INFO) << "Client " << id << " removes peer " << old_addr;
+        // qp_pool->RecycleQp(it->second.qp);
+        // drop qp and not recycle since it's disconnected ? can we recycle it?
+        remote_props.erase(it);
+        peers.erase(old_addr);
+        LOG(INFO) << "Client " << id << " removes peer " << old_addr;
+    }
 
     // find a new peer from ZK
     ret = zoo_get_children(zh, ZK_SVR_ROOT_PATH.c_str(), 0, &peerv);
@@ -433,8 +435,7 @@ string CSLClient::replacePeer(string &old_addr) {
     }
 
     for (i = 0; i < peerv.count; i++) {
-        // For now we don't allow replace with the same peer even though it comes back
-        if ((peers.find(peerv.data[i]) == peers.end()) && (old_addr.compare(peerv.data[i]) == 0)) {
+        if (peers.find(peerv.data[i]) == peers.end()) {
             new_addr = peerv.data[i];  // find a new peer different from current peers
             break;
         }
@@ -453,11 +454,15 @@ string CSLClient::replacePeer(string &old_addr) {
 }
 
 bool CSLClient::recoverPeer(const string &new_peer) {
-    lock_guard<mutex> guard(recover_lock);
-    auto token = make_shared<RequestToken>(context);
+    auto token = make_shared<CombinedRequestToken>(context);
     auto &p = remote_props[new_peer];
-    p.qp->write(buffer.get(), p.remote_buffer_token, buf_offset.load(), token.get());  // ? need mannual segmentation?
-    token->waitUntilCompleted();
+
+    uint64_t local_offs[2] = {0, seq_offset};
+    uint64_t remote_offs[2] = {0, seq_offset};
+    uint32_t sizes[2] = {static_cast<uint32_t>(file_size), sizeof(uint64_t)};  // todo: if size > max_uint32, need multiple writes
+    RequestToken *tokens[2] = {&token->data_token_, &token->seq_token_};
+    p.qp->writeTwoPlace(buffer.get(), local_offs, p.remote_buffer_token, remote_offs, sizes, tokens);
+    token->WaitUntilBothCompleted();
     return true;
 }
 
@@ -489,9 +494,16 @@ tuple<string, size_t> CSLClient::getRecoverSrcPeer() {
 void CSLClient::recoverFromSrc(string &recover_src, size_t size) {
     auto &p = remote_props[recover_src];
     auto token = make_shared<RequestToken>(context);
-    p.qp->read(buffer.get(), p.remote_buffer_token, size, token.get());  // ? need mannual segmentation?
+    p.qp->read(buffer.get(), p.remote_buffer_token, size, token.get());  // todo: if size > max_uint32, need multiple writes
     token->waitUntilCompleted();
     file_size = size;
+}
+
+void CSLClient::watchForPeerJoin() {
+    int ret = zoo_get_children(zh, ZK_SVR_ROOT_PATH.c_str(), 1, nullptr);
+    if (ret) {
+        LOG(ERROR) << "Failed to watch on servers/, errno: " << ret;
+    }
 }
 
 void CSLClient::SendFinalization(int type) {
@@ -559,22 +571,36 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
         if (type == ZOO_DELETED_EVENT) {
             const auto start = chrono::high_resolution_clock::now();
 
-            cli->rep_factor -= 1;
-            string peer, new_peer;
-            stringstream pathss(path);
-            // node path: /servers/<peer>
-            getline(pathss, peer, '/');
-            getline(pathss, peer, '/');
-            getline(pathss, peer, '/');
+            string peer = getPeerFromPath(path), new_peer;
+            
             if ((new_peer = cli->replacePeer(peer)).empty()) {
-                LOG(ERROR) << "replacement failed";
+                LOG(WARNING) << "replacement failed";
+                if (cli->peers.size() <= cli->rep_factor / 2) {
+                    LOG(ERROR) << "less than half peers working, write suspended. cur: " << cli->peers.size();
+                    cli->recover_lock.lock();
+                    // set child watch on server root node to be informed of new server join
+                    cli->watchForPeerJoin();
+                } else {
+                    LOG(WARNING) << "working under reduced redundancy, peer num: " << cli->peers.size()
+                                 << ", expected num: " << cli->rep_factor;
+                }
                 return;
             }
-            if (cli->recoverPeer(new_peer)) cli->rep_factor += 1;
+            cli->recoverPeer(new_peer);
 
             const auto end = chrono::high_resolution_clock::now();
             LOG(INFO) << "Replace and recover a peer takes "
                       << chrono::duration_cast<chrono::microseconds>(end - start).count() << "us";
+        } else if (type == ZOO_CHILD_EVENT) {
+            string peer = "";
+            string new_peer = cli->replacePeer(peer);
+            cli->recoverPeer(new_peer);
+            if (cli->peers.size() > cli->rep_factor / 2) {
+                cli->recover_lock.unlock();
+            }
+            if (cli->peers.size() < cli->rep_factor) {
+                cli->watchForPeerJoin();  // haven't recover to full redundancy, keep watching for new server join
+            }
         }
     }
 }
