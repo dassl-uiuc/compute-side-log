@@ -84,7 +84,7 @@ static struct InitializeIndicator {
 } init_d;
 
 void getClient(const char *pathname, int flags, int fd) {
-    if (__IS_COMP_SIDE_LOG(flags) && (fd >= 0)) {
+    if (__IS_COMP_SIDE_LOG(flags)) {
 #ifdef CSL_DEBUG
         printf("get client for fd %d, pathname %s\n", fd, pathname);
 #endif
@@ -98,7 +98,7 @@ void getClient(const char *pathname, int flags, int fd) {
 #endif
         }
 
-        {
+        if (fd >= 0) {
             std::lock_guard<std::mutex> lock(csl_lock);
             csl_fd_cli.insert(make_pair(fd, csl_client));
         }
@@ -127,7 +127,7 @@ int open(const char *pathname, int flags, ...) {
         fd = original_open(pathname, flags);
     }
 
-    getClient(pathname, flags, fd);
+    if (fd >= 0) getClient(pathname, flags, fd);
 
 #ifdef CSL_DEBUG
     printf("open path %s, flag 0x%x, mode 0%o\n", pathname, flags, mode);
@@ -150,7 +150,7 @@ int open64(const char *pathname, int flags, ...) {
         fd = original_open64(pathname, flags);
     }
 
-    getClient(pathname, flags, fd);
+    if (fd >= 0) getClient(pathname, flags, fd);
 
 #ifdef CSL_DEBUG
     printf("open64 path %s, flag 0x%x, mode 0%o\n", pathname, flags, mode);
@@ -173,7 +173,7 @@ int openat(int dirfd, const char *pathname, int flags, ...) {
         fd = original_openat(dirfd, pathname, flags);
     }
 
-    getClient(pathname, flags, fd);
+    if (fd >= 0) getClient(pathname, flags, fd);
 
 #ifdef CSL_DEBUG
     printf("openat dir %d path %s, flag 0x%x, mode 0%o\n", dirfd, pathname, flags, mode);
@@ -196,7 +196,7 @@ int openat64(int dirfd, const char *pathname, int flags, ...) {
         fd = original_openat64(dirfd, pathname, flags);
     }
 
-    getClient(pathname, flags, fd);
+    if (fd >= 0) getClient(pathname, flags, fd);
 
 #ifdef CSL_DEBUG
     printf("openat64 dir %d path %s, flag 0x%x, mode 0%o\n", dirfd, pathname, flags, mode);
@@ -545,10 +545,22 @@ int __xstat64(int vers, const char *name, struct stat64 *buf) {
     }
 
     int ret = original_stat64(vers, name, buf);
+    if (ret < 0)
+        return ret;
     auto it = csl_path_cli.find(name);
     if (it != csl_path_cli.end()) {
         auto cli = it->second;
         buf->st_size = cli->GetFileSize();
+#ifdef CSL_DEBUG
+        printf("compute side log stat, path %s, size %ld\n", name, buf->st_size);
+#endif
+    } else if (buf->st_size == 0) {
+        /* TODO:
+         * This is a heuristic approach, if a file has an entry in the fs but its size is 0, then it's probably a NCL
+         * file. In this case we prefetch its content from peers.
+         */
+        getClient(name, O_CSL, -1);
+        buf->st_size = csl_path_cli[name]->GetFileSize();
 #ifdef CSL_DEBUG
         printf("compute side log stat, path %s, size %ld\n", name, buf->st_size);
 #endif
