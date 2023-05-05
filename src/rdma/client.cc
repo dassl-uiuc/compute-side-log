@@ -66,15 +66,6 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
 
     init(host_addresses);
 
-    for (auto &p : peers) {
-        string peer_path = ZK_SVR_ROOT_PATH + "/" + p;
-        struct Stat stat;
-        ret = zoo_wexists(zh, peer_path.c_str(), ClientWatcher, this, &stat);
-        if (ret) {
-            LOG(ERROR) << "Error set watcher on node " << peer_path << " errno:" << ret;
-        }
-    }
-
     if (n_peers == 0) {
         createClientZKNode();  // node doesn't exist, need to create client ZK node
     } else if (try_recover){
@@ -213,6 +204,8 @@ void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size
 }
 
 void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t size) {
+    lock_guard<mutex> guard(recover_lock);
+
     vector<shared_ptr<CombinedRequestToken> > request_tokens;
     uint64_t local_offs[2] = {local_off, seq_offset};
     uint64_t remote_offs[2] = {remote_off, seq_offset};
@@ -400,6 +393,14 @@ bool CSLClient::AddPeer(const string &host_addr) {
     LOG(INFO) << host_addr << " connected";
     prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
     peers.insert(host_addr);
+
+    string peer_path = ZK_SVR_ROOT_PATH + "/" + host_addr;
+    struct Stat stat;
+    int ret = zoo_wexists(zh, peer_path.c_str(), ClientWatcher, this, &stat);
+    if (ret) {
+        LOG(ERROR) << "Error set watcher on node " << peer_path << " errno:" << ret;
+        return false;
+    }
 
     return true;
 }
