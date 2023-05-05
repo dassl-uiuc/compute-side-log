@@ -473,12 +473,14 @@ tuple<string, size_t> CSLClient::getRecoverSrcPeer() {
     string ip_recover_src;
     for (auto &p : remote_props) {
         struct ClientReq getinfo_req;
-        struct ServerResp getinfo_resp;
-
         getinfo_req.type = GET_INFO;
         getinfo_req.fi.size = 0;
         strcpy(getinfo_req.fi.file_id, file_id.c_str());
         send(p.second.socket, &getinfo_req, sizeof(getinfo_req), 0);
+    }
+
+    for (auto &p : remote_props) {
+        struct ServerResp getinfo_resp;
         recv(p.second.socket, &getinfo_resp, sizeof(getinfo_resp), 0);
         if (getinfo_resp.seq != 0 && getinfo_resp.seq < min_seq) {
             min_seq = getinfo_resp.seq;
@@ -497,6 +499,13 @@ void CSLClient::recoverFromSrc(string &recover_src, size_t size) {
     p.qp->read(buffer.get(), p.remote_buffer_token, size, token.get());  // todo: if size > max_uint32, need multiple writes
     token->waitUntilCompleted();
     file_size = size;
+}
+
+void CSLClient::syncPeerAfterRecover(const string &skip_peer) {
+    for (auto &p : peers) {
+        if (p.compare(skip_peer) == 0) continue;
+        recoverPeer(p);
+    }
 }
 
 void CSLClient::watchForPeerJoin() {
@@ -550,6 +559,8 @@ void CSLClient::TryRecover() {
         LOG(INFO) << "recover " << recover_size << "B for " << filename << " from " << recover_src;
         recoverFromSrc(recover_src, recover_size);
     }
+
+    syncPeerAfterRecover(recover_src);
 }
 
 void CSLClient::TryLocalRecover(int fd) {

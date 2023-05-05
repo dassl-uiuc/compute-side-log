@@ -280,6 +280,14 @@ class CSLClient {
      */
     void recoverFromSrc(string &recover_src, size_t size);
 
+    /**
+     * Sync the state of all replication peers after client is recovered. We need this step because the state of peers
+     * may not be the same and we must bring them to the same before continuing.
+     *
+     * @param skip_peer The peer to skip, which is the peer we used to recover the client.
+     */
+    void syncPeerAfterRecover(const string &skip_peer);
+
     void watchForPeerJoin();
 
     /**
