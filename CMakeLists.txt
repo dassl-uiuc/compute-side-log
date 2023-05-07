@@ -18,6 +18,7 @@ find_package(glog)
 find_package(Threads REQUIRED)
 
 set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -pg")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-unused-result")
 
 add_subdirectory(RDMA)
 add_subdirectory(HdrHistogram_c)

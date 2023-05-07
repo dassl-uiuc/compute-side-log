@@ -1,8 +1,11 @@
 #include "rdma/client.h"
-#include "csl_config.h"
-#include <iostream>
 
 #include <infinity/core/Context.h>
+#include <unistd.h>
+
+#include <iostream>
+
+#include "csl_config.h"
 
 int main() {
     infinity::core::Context *context = new infinity::core::Context(infinity::core::Configuration::DEFAULT_IB_DEVICE, 1);
@@ -14,16 +17,19 @@ int main() {
 
     char test_buf[128];
     memset(test_buf, 42, 128);
+    int i = 0;
 
     // client1.Append(test_buf, 128);
-    client2.Append(test_buf, 128);
-    client2.Append(test_buf, 128);
-    client2.Append(test_buf, 128);
+    while (true) {
+        sleep(1);
+        client2.WritePos(test_buf, 128, 0);
+        std::cout << i++ << std::endl;
+    }
     char get;
     std::cin >> get;
 
     client2.SendFinalization();
 
-    delete context;    
+    delete context;
     return 0;
 }
