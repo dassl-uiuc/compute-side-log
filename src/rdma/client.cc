@@ -243,6 +243,14 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
 
 bool CSLClient::quorumCompleted(vector<shared_ptr<CombinedRequestToken>> &tokens) {
     uint n = 0;
+    /**
+     * No enough peers, impossible to gather a quorum, just return and release the recovery lock.
+     * We can do this since when we find there is no enough peers, a client watcher callback must be running (it's the
+     * only one that can remove a peer). After we release the lock, the client watcher will grab the lock to block
+     * future write.
+     * todo: may need a better machenism
+     */
+    if (peers.size() <= rep_factor / 2) return true;
     for (auto &t : tokens) {
         if (t->CheckAllPrevCompleted()) n++;
         if (n > rep_factor / 2) return true;
@@ -335,7 +343,6 @@ off_t CSLClient::Seek(off_t offset, int whence) {
 }
 
 int CSLClient::Truncate(off_t length) {
-    // todo: currently we do not maintain the size so no action is taken to adjust the size
     file_size = length;
     LOG(INFO) << "current size " << buf_offset << " truncate to " << length;
     if (length < buf_offset) {
@@ -383,7 +390,7 @@ bool CSLClient::AddPeer(const string &host_addr) {
     }
 
     LOG(INFO) << "Connecting to " << host_addr;
-    RemoteConData &prop = remote_props.insert(make_pair(host_addr, RemoteConData())).first->second;
+    RemoteConData prop;  // xxx: I don't know why I made insertion before initialization in commit fbcaa77
     struct FileInfo fi;
     fi.size = buf_size;
     const string file_identifier = getFileIdentifier();
@@ -392,6 +399,7 @@ bool CSLClient::AddPeer(const string &host_addr) {
     prop.socket = prop.qp->getRemoteSocket();
     LOG(INFO) << host_addr << " connected";
     prop.remote_buffer_token = static_cast<infinity::memory::RegionToken *>(prop.qp->getUserData());
+    remote_props[host_addr] = prop;
     peers.insert(host_addr);
 
     string peer_path = ZK_SVR_ROOT_PATH + "/" + host_addr;
@@ -576,6 +584,7 @@ void CSLClient::TryLocalRecover(int fd) {
 }
 
 void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx) {
+    // todo: we need to protect peers and remote_props from concurrency
     CSLClient *cli = reinterpret_cast<CSLClient *>(watcher_ctx);
     LOG(INFO) << "Client watcher triggered on client " << cli->GetId() << ", type: " << type2String(type)
               << " state: " << state2String(state) << " path: " << path;
@@ -588,14 +597,14 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
             if ((new_peer = cli->replacePeer(peer)).empty()) {
                 LOG(WARNING) << "replacement failed";
                 if (cli->peers.size() <= cli->rep_factor / 2) {
-                    LOG(ERROR) << "less than half peers working, write suspended. cur: " << cli->peers.size();
                     cli->recover_lock.lock();
-                    // set child watch on server root node to be informed of new server join
-                    cli->watchForPeerJoin();
+                    LOG(ERROR) << "less than half peers working, write suspended. cur: " << cli->peers.size();
                 } else {
                     LOG(WARNING) << "working under reduced redundancy, peer num: " << cli->peers.size()
                                  << ", expected num: " << cli->rep_factor;
                 }
+                // set child watch on server root node to be informed of new server join
+                cli->watchForPeerJoin();
                 return;
             }
             cli->recoverPeer(new_peer);
@@ -606,7 +615,10 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
         } else if (type == ZOO_CHILD_EVENT) {
             string peer = "";
             string new_peer = cli->replacePeer(peer);
-            cli->recoverPeer(new_peer);
+            if (new_peer.empty())
+                return;  // this child event is triggered by server node delete
+            if (cli->in_use)  // if client not in use, no need to recover peer
+                cli->recoverPeer(new_peer);
             if (cli->peers.size() > cli->rep_factor / 2) {
                 cli->recover_lock.unlock();
             }
