@@ -20,6 +20,7 @@
 
 #define FORCE_REMOTE_READ   0
 #define USE_QUORUM_WRITE    1
+#define LATENCY             1
 
 using infinity::queues::QueuePairFactory;
 
@@ -61,16 +62,33 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
         return;
     }
 
+#if LATENCY
+    auto start = std::chrono::high_resolution_clock::now();
+#endif
+
     set<string> host_addresses;
     n_peers = getPeersFromZK(host_addresses);  // check if client node has been created before
+#if LATENCY
+    auto after_get_peer = std::chrono::high_resolution_clock::now();
+#endif
 
     init(host_addresses);
+#if LATENCY
+    auto after_connect = std::chrono::high_resolution_clock::now();
+#endif
 
     if (n_peers == 0) {
         createClientZKNode();  // node doesn't exist, need to create client ZK node
     } else if (try_recover){
         TryRecover();
     }
+#if LATENCY
+    auto after_recover = std::chrono::high_resolution_clock::now();
+    printf("get peer %ld\nconnect %ld\nrecover %ld\n",
+           std::chrono::duration_cast<std::chrono::microseconds>(after_get_peer - start).count(),
+           std::chrono::duration_cast<std::chrono::microseconds>(after_connect - after_get_peer).count(),
+           std::chrono::duration_cast<std::chrono::microseconds>(after_recover - after_connect).count());
+#endif
 #if USE_QUORUM_WRITE && ASYNC_QUORUM_POLL
     cq_poll_th = thread(&CSLClient::CQPollingFunc, this);
 #endif
