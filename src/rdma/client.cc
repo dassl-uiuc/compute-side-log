@@ -23,6 +23,7 @@
 #define LATENCY             1
 
 using infinity::queues::QueuePairFactory;
+using namespace std::chrono;
 
 CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_pool, set<string> host_addresses,
                      size_t buf_size, uint32_t id, const char *name)
@@ -63,18 +64,18 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
     }
 
 #if LATENCY
-    auto start = std::chrono::high_resolution_clock::now();
+    auto start = high_resolution_clock::now();
 #endif
 
     set<string> host_addresses;
     n_peers = getPeersFromZK(host_addresses);  // check if client node has been created before
 #if LATENCY
-    auto after_get_peer = std::chrono::high_resolution_clock::now();
+    auto after_get_peer = high_resolution_clock::now();
 #endif
 
     init(host_addresses);
 #if LATENCY
-    auto after_connect = std::chrono::high_resolution_clock::now();
+    auto after_connect = high_resolution_clock::now();
 #endif
 
     if (n_peers == 0) {
@@ -83,11 +84,10 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
         TryRecover();
     }
 #if LATENCY
-    auto after_recover = std::chrono::high_resolution_clock::now();
-    printf("get peer %ld\nconnect %ld\nrecover %ld\n",
-           std::chrono::duration_cast<std::chrono::microseconds>(after_get_peer - start).count(),
-           std::chrono::duration_cast<std::chrono::microseconds>(after_connect - after_get_peer).count(),
-           std::chrono::duration_cast<std::chrono::microseconds>(after_recover - after_connect).count());
+    auto after_recover = high_resolution_clock::now();
+    printf("get peer %ld\nconnect %ld\nrecover %ld\n", duration_cast<microseconds>(after_get_peer - start).count(),
+           duration_cast<microseconds>(after_connect - after_get_peer).count(),
+           duration_cast<microseconds>(after_recover - after_connect).count());
 #endif
 #if USE_QUORUM_WRITE && ASYNC_QUORUM_POLL
     cq_poll_th = thread(&CSLClient::CQPollingFunc, this);
@@ -222,6 +222,7 @@ void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size
 }
 
 void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t size) {
+    // todo: allow this to fail, application will handle the write() fail
     lock_guard<mutex> guard(recover_lock);
 
     vector<shared_ptr<CombinedRequestToken> > request_tokens;
@@ -256,6 +257,12 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
             }
         }
 #endif
+        /**
+         * todo:
+         * this can happen, we send to 1,2,3. 1,2 crashed simultaneously and get replaced by 4,5.
+         * Now we have 3 peers alive, so L278 won't be triggerred but it's still polling for requests to 1,2, which will
+         * never succeed.
+         */
     } while (!quorumCompleted(request_tokens));
 }
 

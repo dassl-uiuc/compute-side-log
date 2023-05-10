@@ -13,9 +13,12 @@
 
 #include "common.h"
 
+#define LATENCY 1
+
 using infinity::memory::RegionToken;
 using infinity::queues::QueuePair;
 using infinity::queues::QueuePairFactory;
+using namespace std::chrono;
 
 CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts) : stop(false) {
     context = new infinity::core::Context(infinity::core::Configuration::DEFAULT_IB_DEVICE, 1);
@@ -111,6 +114,10 @@ void CSLServer::handleIncomingConnection() {
     struct FileInfo fi;
     string file_id;
 
+#if LATENCY
+    auto start = high_resolution_clock::now();
+#endif
+
     LOG(INFO) << "Waiting for connection from new client...";
     socket = qp_factory->waitIncomingConnection(&recv_buf);
     DLOG_ASSERT(recv_buf->userDataSize == sizeof(FileInfo))
@@ -120,6 +127,10 @@ void CSLServer::handleIncomingConnection() {
     fi = *(reinterpret_cast<FileInfo *>(recv_buf->userData));
     file_id = fi.file_id;
     LOG(INFO) << "Get incoming connection: " << file_id << ":" << fi.size / 1024.0 / 1024.0 << "MB";
+
+#if LATENCY
+    auto after_recv = high_resolution_clock::now();
+#endif
 
     // Find if MR and QP have been created for this file
     auto it = local_cons.find(file_id);
@@ -151,6 +162,11 @@ void CSLServer::handleIncomingConnection() {
         existing_qps.insert(make_pair(con.qp->getRemoteSocket(), con.qp));
     }
     LOG(INFO) << "Connection accepted, total: " << GetConnectionCount();
+#if LATENCY
+    auto after_reply = high_resolution_clock::now();
+    printf("accept & recv %ldus\nreply %ldus\n", duration_cast<microseconds>(after_recv - start).count(),
+           duration_cast<microseconds>(after_reply - after_recv).count());
+#endif
 }
 
 int CSLServer::handleClientRequest(int socket) {
