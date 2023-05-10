@@ -80,6 +80,7 @@ void CSLServer::Run() {
             }
         }
 
+        tv.tv_sec = 1;
         ret = select(max_fd + 1, &fds, nullptr, nullptr, &tv);
         if (ret < 0) {
             LOG(ERROR) << "Error select(), errno: " << errno;
