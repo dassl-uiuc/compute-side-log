@@ -230,7 +230,7 @@ void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size
     }
 }
 
-void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t size) {
+bool CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t size) {
     // todo: allow this to fail, application will handle the write() fail
     lock_guard<mutex> guard(recover_lock);
 
@@ -252,7 +252,10 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
         p.second.qp->writeTwoPlace(buffer.get(), local_offs, p.second.remote_buffer_token, remote_offs, sizes, tokens);
     }
 
+    int i = 0;
+    bool completed = false;
     do {
+        completed = false;
 #if ASYNC_QUORUM_POLL
 #else
         // todo: what if one rep fail-slow? (queue will build up)
@@ -272,7 +275,18 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
          * Now we have 3 peers alive, so L278 won't be triggerred but it's still polling for requests to 1,2, which will
          * never succeed.
          */
-    } while (!quorumCompleted(request_tokens));
+        i++;
+        completed = quorumCompleted(request_tokens);
+    } while (!completed && i < 500);
+    
+    if (!completed) {
+        uncompleted_peers.clear();
+        for (auto &t : request_tokens) {
+            if (!t->CheckAllPrevCompleted())
+                uncompleted_peers.push_back(t->peer_);
+        }
+    }
+    return completed;
 }
 
 bool CSLClient::quorumCompleted(vector<shared_ptr<CombinedRequestToken>> &tokens) {
@@ -316,15 +330,33 @@ void CSLClient::CQPollingFunc() {
 ssize_t CSLClient::Append(const void *buf, size_t size) {
     size = min(size, buffer->getSizeInBytes() - buf_offset);
     size_t cur_off = buf_offset.fetch_add(size);
+    size_t old_file_size = file_size;
     file_size = max(file_size, buf_offset.load());
     memcpy((char *)buffer->getAddress() + cur_off, buf, size);
     *seq_addr = seq.fetch_add(1);
 #if USE_QUORUM_WRITE
-    WriteQuorum(cur_off, cur_off, size);
+    int i = 0;
+    bool ret;
+    while (!(ret = WriteQuorum(cur_off, cur_off, size)) && i < 3) {
+        i++;
+    }
+    if (!ret && seq.load() > 1) {
+        printf("%ld: %s, %s\n", seq.load(), uncompleted_peers[0].c_str(), uncompleted_peers[1].c_str());
+        ClientWatcher(nullptr, ZOO_DELETED_EVENT, ZOO_CONNECTED_STATE, uncompleted_peers[0].c_str(), this);
+        remote_props.erase(uncompleted_peers[1]);
+        peers.erase(uncompleted_peers[1]);
+        ret = WriteQuorum(cur_off, cur_off, size);
+    }
 #else
     WriteSync(cur_off, cur_off, size);
 #endif
-    return size;
+    if (ret) {
+        return size;
+    } else {
+        buf_offset.fetch_sub(size);
+        file_size = old_file_size;
+        return 0;
+    }
 }
 
 ssize_t CSLClient::WritePos(const void *buf, size_t size, off_t pos) {
@@ -333,11 +365,16 @@ ssize_t CSLClient::WritePos(const void *buf, size_t size, off_t pos) {
     memcpy((char *)buffer->getAddress() + pos, buf, size);
     *seq_addr = seq.fetch_add(1);
 #if USE_QUORUM_WRITE
-    WriteQuorum(pos, pos, size);
+    int i = 0;
+    bool ret;
+    while (!(ret = WriteQuorum(pos, pos, size)) && i < 3) {
+        usleep(50000);  // sleep 50ms to wait for potentially failed peer to be replaced
+        i++;
+    }
 #else
     WriteSync(pos, pos, size);
 #endif
-    return size;
+    return ret ? size : 0;
 }
 
 ssize_t CSLClient::Read(void *buf, size_t size) {
@@ -436,13 +473,13 @@ bool CSLClient::AddPeer(const string &host_addr) {
     remote_props[host_addr] = prop;
     peers.insert(host_addr);
 
-    string peer_path = ZK_SVR_ROOT_PATH + "/" + host_addr;
-    struct Stat stat;
-    int ret = zoo_wexists(zh, peer_path.c_str(), ClientWatcher, this, &stat);
-    if (ret) {
-        LOG(ERROR) << "Error set watcher on node " << peer_path << " errno:" << ret;
-        return false;
-    }
+    // string peer_path = ZK_SVR_ROOT_PATH + "/" + host_addr;
+    // struct Stat stat;
+    // int ret = zoo_wexists(zh, peer_path.c_str(), ClientWatcher, this, &stat);
+    // if (ret) {
+    //     LOG(ERROR) << "Error set watcher on node " << peer_path << " errno:" << ret;
+    //     return false;
+    // }
 
     return true;
 }
@@ -650,7 +687,7 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
 #if LATENCY
             const auto after_connect = high_resolution_clock::now();
 #endif
-            cli->recoverPeer(new_peer);
+            cli->recoverPeer(new_peer);  // todo: should not use the peer before it's recovered
 #if LATENCY
             const auto after_update = high_resolution_clock::now();
 #endif

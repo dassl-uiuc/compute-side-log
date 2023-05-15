@@ -103,6 +103,7 @@ class CSLClient {
     uint64_t *seq_addr;
     uint64_t seq_offset;
     zhandle_t *zh;
+    vector<string> uncompleted_peers;
 
    public:
     CSLClient() = default;
@@ -120,7 +121,7 @@ class CSLClient {
     /**
      * Write to a quorum of replicas before return
      */
-    void WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t size);
+    bool WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t size);
 
     /**
      * Append to the end of the log.
