@@ -240,6 +240,7 @@ class CSLClient {
    private:
     void init(set<string> host_addresses);
     void createClientZKNode();
+    void updateClientZKNode();
 
     bool quorumCompleted(vector<shared_ptr<CombinedRequestToken> > &tokens);
 

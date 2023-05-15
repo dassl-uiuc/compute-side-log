@@ -171,6 +171,15 @@ void CSLClient::createClientZKNode() {
     }
 }
 
+void CSLClient::updateClientZKNode() {
+    string peers_str = generateIpString(peers);
+    string node_path = ZK_CLI_ROOT_PATH + "/" + getZkNodeName();
+    int ret = zoo_set(zh, node_path.c_str(), peers_str.data(), peers_str.size(), -1);
+    if (ret) {
+        LOG(ERROR) << "Failed to set zk node value: " << node_path << ", errno: " << ret;
+    }
+}
+
 CSLClient::~CSLClient() {
     int ret = 0;
 
@@ -624,7 +633,6 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
             const auto start = high_resolution_clock::now();
 
             string peer = getPeerFromPath(path), new_peer;
-
             
             if ((new_peer = cli->replacePeer(peer)).empty()) {
                 LOG(WARNING) << "replacement failed";
@@ -643,13 +651,18 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
             const auto after_connect = high_resolution_clock::now();
 #endif
             cli->recoverPeer(new_peer);
+#if LATENCY
+            const auto after_update = high_resolution_clock::now();
+#endif
+            cli->updateClientZKNode();
 
             const auto end = high_resolution_clock::now();
 #if LATENCY
-            printf("recover peer:\nget peer: %ld us\nconnect: %ld us\nrecover: %ld us\n",
+            printf("recover peer:\nget peer: %ld us\nconnect: %ld us\nrecover: %ld us\nupdate: %ld us\n",
                    duration_cast<microseconds>(after_get_peer - start).count(),
                    duration_cast<microseconds>(after_connect - after_get_peer).count(),
-                   duration_cast<microseconds>(end - after_connect).count());
+                   duration_cast<microseconds>(after_update - after_connect).count(),
+                   duration_cast<microseconds>(end - after_update).count());
 #endif
             LOG(INFO) << "Replace and recover a peer takes "
                       << duration_cast<microseconds>(end - start).count() << "us";
