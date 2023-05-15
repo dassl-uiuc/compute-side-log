@@ -45,8 +45,10 @@ class CSLClient {
         RequestToken data_token_;
         RequestToken seq_token_;
         atomic<bool> all_prev_completed_;
+        const string peer_;
 
-        CombinedRequestToken(Context *ctx) : ctx_(ctx), data_token_(ctx), seq_token_(ctx), all_prev_completed_(false) {}
+        CombinedRequestToken(Context *ctx, const string &peer)
+            : ctx_(ctx), data_token_(ctx), seq_token_(ctx), all_prev_completed_(false), peer_(peer) {}
 
         void WaitUntilBothCompleted() {
             while (!data_token_.completed.load() || !seq_token_.completed.load()) {
@@ -63,13 +65,9 @@ class CSLClient {
             }
         }
 
-        bool CheckAllPrevCompleted() {
-            return all_prev_completed_.load();
-        }
+        bool CheckAllPrevCompleted() { return all_prev_completed_.load(); }
 
-        void SetAllPrevCompleted() {
-            all_prev_completed_.store(true);
-        }
+        void SetAllPrevCompleted() { all_prev_completed_.store(true); }
     };
     struct RemoteConData {
         shared_ptr<infinity::queues::QueuePair> qp;

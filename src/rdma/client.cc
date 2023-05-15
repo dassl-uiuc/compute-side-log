@@ -210,7 +210,7 @@ void CSLClient::WriteSync(uint64_t local_off, uint64_t remote_off, uint32_t size
     uint32_t sizes[2] = {size, sizeof(uint64_t)};
 
     for (auto &p : remote_props) {
-        auto token = make_shared<CombinedRequestToken>(context);
+        auto token = make_shared<CombinedRequestToken>(context, p.first);
         combined_req_tokens.emplace_back(token);
         RequestToken *tokens[2] = {&token->data_token_, &token->seq_token_};
         p.second.qp->writeTwoPlace(buffer.get(), local_offs, p.second.remote_buffer_token, remote_offs, sizes, tokens);
@@ -231,7 +231,7 @@ void CSLClient::WriteQuorum(uint64_t local_off, uint64_t remote_off, uint32_t si
     uint32_t sizes[2] = {size, sizeof(uint64_t)};
     
     for (auto &p : remote_props) {
-        auto token = make_shared<CombinedRequestToken>(context);
+        auto token = make_shared<CombinedRequestToken>(context, p.first);
         request_tokens.emplace_back(token);
         {
 #if ASYNC_QUORUM_POLL
@@ -438,6 +438,8 @@ bool CSLClient::AddPeer(const string &host_addr) {
     return true;
 }
 
+system_clock::time_point after_get_peer;
+
 string CSLClient::replacePeer(string &old_addr) {
     string new_addr;
     struct String_vector peerv;
@@ -479,6 +481,10 @@ string CSLClient::replacePeer(string &old_addr) {
         return "";
     }
 
+#if LATENCY
+    after_get_peer = high_resolution_clock::now();
+#endif
+
     if (AddPeer(new_addr)) {
         LOG(INFO) << "Replaced old peer " << old_addr << " with new peer " << new_addr;
         return new_addr;
@@ -488,7 +494,7 @@ string CSLClient::replacePeer(string &old_addr) {
 }
 
 bool CSLClient::recoverPeer(const string &new_peer) {
-    auto token = make_shared<CombinedRequestToken>(context);
+    auto token = make_shared<CombinedRequestToken>(context, new_peer);
     auto &p = remote_props[new_peer];
 
     uint64_t local_offs[2] = {0, seq_offset};
@@ -612,12 +618,13 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
     // todo: we need to protect peers and remote_props from concurrency
     CSLClient *cli = reinterpret_cast<CSLClient *>(watcher_ctx);
     LOG(INFO) << "Client watcher triggered on client " << cli->GetId() << ", type: " << type2String(type)
-              << " state: " << state2String(state) << " path: " << path;
+              << " state: " << state2String(state) << " path: " << path;\
     if (state == ZOO_CONNECTED_STATE) {
         if (type == ZOO_DELETED_EVENT) {
-            const auto start = chrono::high_resolution_clock::now();
+            const auto start = high_resolution_clock::now();
 
             string peer = getPeerFromPath(path), new_peer;
+
             
             if ((new_peer = cli->replacePeer(peer)).empty()) {
                 LOG(WARNING) << "replacement failed";
@@ -632,11 +639,20 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
                 cli->watchForPeerJoin();
                 return;
             }
+#if LATENCY
+            const auto after_connect = high_resolution_clock::now();
+#endif
             cli->recoverPeer(new_peer);
 
-            const auto end = chrono::high_resolution_clock::now();
+            const auto end = high_resolution_clock::now();
+#if LATENCY
+            printf("recover peer:\nget peer: %ld us\nconnect: %ld us\nrecover: %ld us\n",
+                   duration_cast<microseconds>(after_get_peer - start).count(),
+                   duration_cast<microseconds>(after_connect - after_get_peer).count(),
+                   duration_cast<microseconds>(end - after_connect).count());
+#endif
             LOG(INFO) << "Replace and recover a peer takes "
-                      << chrono::duration_cast<chrono::microseconds>(end - start).count() << "us";
+                      << duration_cast<microseconds>(end - start).count() << "us";
         } else if (type == ZOO_CHILD_EVENT) {
             string peer = "";
             string new_peer = cli->replacePeer(peer);
