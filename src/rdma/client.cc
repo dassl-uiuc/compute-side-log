@@ -515,6 +515,26 @@ bool CSLClient::recoverPeer(const string &new_peer) {
     return true;
 }
 
+bool CSLClient::recoverPeers(const vector<string> &new_addrs) {
+    vector<shared_ptr<CombinedRequestToken> > tokens;
+    uint64_t local_offs[2] = {0, seq_offset};
+    uint64_t remote_offs[2] = {0, seq_offset};
+    uint32_t sizes[2] = {static_cast<uint32_t>(file_size), sizeof(uint64_t)};  // todo: if size > max_uint32, need multiple writes
+
+    for (auto &p : remote_props) {
+        auto token = make_shared<CombinedRequestToken>(context, p.first);
+        tokens.emplace_back(token);
+        RequestToken *tokens[2] = {&token->data_token_, &token->seq_token_};
+        p.second.qp->writeTwoPlace(buffer.get(), local_offs, p.second.remote_buffer_token, remote_offs, sizes, tokens);
+    }
+
+    for (auto token : tokens) {
+        token->WaitUntilBothCompleted();
+    }
+
+    return true;
+}
+
 tuple<string, size_t> CSLClient::getRecoverSrcPeer() {
     const string file_id = getFileIdentifier();
     uint64_t min_seq = UINT64_MAX;
@@ -548,13 +568,17 @@ void CSLClient::recoverFromSrc(string &recover_src, size_t size) {
     p.qp->read(buffer.get(), p.remote_buffer_token, size, token.get());  // todo: if size > max_uint32, need multiple writes
     token->waitUntilCompleted();
     file_size = size;
+    // no need to recover seq number, just let it start from 0
 }
 
 void CSLClient::syncPeerAfterRecover(const string &skip_peer) {
+    vector<string> peers_to_sync;
     for (auto &p : peers) {
         if (p.compare(skip_peer) == 0) continue;
-        recoverPeer(p);
+        peers_to_sync.push_back(p);
     }
+
+    recoverPeers(peers_to_sync);
 }
 
 void CSLClient::watchForPeerJoin() {
@@ -608,8 +632,15 @@ void CSLClient::TryRecover() {
         LOG(INFO) << "recover " << recover_size << "B for " << filename << " from " << recover_src;
         recoverFromSrc(recover_src, recover_size);
     }
-
+#if LATENCY
+    auto before_sync = high_resolution_clock::now();
+#endif
     syncPeerAfterRecover(recover_src);
+
+#if LATENCY
+    auto after_sync = high_resolution_clock::now();
+    printf("sync peers: %ld us\n", duration_cast<microseconds>(after_sync - before_sync).count());
+#endif
 }
 
 void CSLClient::TryLocalRecover(int fd) {

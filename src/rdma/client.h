@@ -263,6 +263,7 @@ class CSLClient {
      * @return true if recovery is successful
      */
     bool recoverPeer(const string &new_addr);
+    bool recoverPeers(const vector<string> &new_addrs);
 
     /**
      * Get the ip address of the replication server from which the client recover the lost data.
