@@ -10,8 +10,10 @@
 #include <set>
 #include <string>
 #include <unordered_map>
+#include <thread>
 
 #include "syscall_type.h"
+#include "ncl_stat.h"
 
 using original_fopen_t = FILE *(*)(const char *, const char *);
 using original_fwrite_t = size_t (*)(const void *, size_t, size_t, FILE *);
@@ -35,52 +37,73 @@ static original_fclose_t original_fclose = reinterpret_cast<original_fclose_t>(d
 
 using namespace std;
 
-const string LOG = "aof";
-const string DB = "rdb";
+const string LOG    = "ib_logfile";
+const string DB     = "ibd";
 
 struct IoStat {
     const set<string> exts = {LOG, DB};
     unordered_map<string, hdr_histogram *> ext_stat;
     unordered_map<int, hdr_histogram *> fd_stat;
     unordered_map<int, size_t> fd_accumulated;
+    thread pr_th;
 
     IoStat() {
         for (auto &e : exts) {
             hdr_init(1, 1024 * 1024 * 1024, 3, &ext_stat[e]);
         }
+        pr_th = thread([this]() {
+            int i = 0;
+            while (true) {
+                sleep(5);
+                show(LOG);
+                show(DB);
+                i++;
+                if (i == 5) {
+                    save(LOG);
+                    save(DB);
+                    i = 0;
+                    cout << "size stat saved" << endl;
+                }
+            }
+        });
+        pr_th.detach();
     }
 
     ~IoStat() {
         show(LOG);
+        show(DB);
     }
 
     void show(const string &e) {
         cout << "ext: " << e << " pid: " << getpid() << endl;
+        hdr_percentiles_print(ext_stat[e], stdout, 5, 1, CLASSIC);
+        // for (int i = 0; i <= 100; i++) {
+        //     printf("%d,%ld\n", i, hdr_value_at_percentile(ext_stat[e], (double)i));
+        // }
+    }
+
+    void save(const string &e) {
         string stat_name = e + "_stat.csv";
         FILE *fp = fopen(stat_name.c_str(), "w");
         for (int i = 0; i <= 100; i++) {
-            printf("%d,%ld\n", i, hdr_value_at_percentile(ext_stat[e], (double)i));
+            fprintf(fp, "%d,%ld\n", i, hdr_value_at_percentile(ext_stat[e], (double)i));
         }
         fclose(fp);
-        hdr_percentiles_print(ext_stat[e], stdout, 5, 1, CLASSIC);
     }
 };
 
 static IoStat io_stat = {};
 static mutex lk;
 
-string getFileExt(const string &s) {
-    size_t i = s.rfind('.', s.length());
-    if (i != string::npos) {
-        return (s.substr(i + 1, s.length() - i));
-    }
-
-    return ("");
-}
-
 void prepareHist(const char *path, int fd) {
+    if (fd < 0) return;
     // lock_guard<mutex> gd(lk);
-    string ext = getFileExt(path);
+    string ext = getFileName(path);
+    if (checkFileNamePrefix(ext, LOG))
+        ext = LOG;
+    else if (getParentDir(path).compare("ycsb") == 0)
+        ext = getFileExt(path);
+
     if (io_stat.exts.find(ext) != io_stat.exts.end()) {
         io_stat.fd_stat[fd] = io_stat.ext_stat[ext];
         cout << "pid " << getpid() << " opened: " << path << ", fd: " << fd << ", extension: " << ext << endl;
@@ -201,8 +224,8 @@ bool record_accum_value(int fd) {
     if ((io_stat.fd_accumulated.find(fd) != io_stat.fd_accumulated.end()) && (io_stat.fd_accumulated[fd] > 0)) {
         hdr_record_value(io_stat.fd_stat[fd], io_stat.fd_accumulated[fd]);
         
-        if (io_stat.fd_stat[fd] != io_stat.ext_stat[LOG])
-        cout << "------------------"<<fd<<"-------------------- accum write: " << io_stat.fd_accumulated[fd] << endl;
+        // if (io_stat.fd_stat[fd] != io_stat.ext_stat[LOG])
+        // cout << "------------------"<<fd<<"-------------------- accum write: " << io_stat.fd_accumulated[fd] << endl;
         
         io_stat.fd_accumulated[fd] = 0;
         return true;
