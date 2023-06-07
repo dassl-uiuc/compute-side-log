@@ -12,4 +12,4 @@ cd ./zookeeper/zookeeper-jute && mvn compile && cd ..
 cd zookeeper-client/zookeeper-client-c
 autoreconf -if
 ./configure --with-syncapi
-make && sudo make install
+make -j && sudo make install

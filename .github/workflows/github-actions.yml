@@ -1,0 +1,24 @@
+name: "NCL Build Actions"
+on:
+    push:
+        branches:
+            - main
+    pull_request:
+        branches:
+            - main
+jobs:
+    build:
+        runs-on: ubuntu-20.04
+        steps:
+            - name: Checkout submodule
+              uses: actions/checkout@v3
+              with:
+                submodules: recursive
+            - name: Install deps
+              run: ./install-deps.sh
+            - run: sudo apt install libibverbs-dev ninja-build -y
+            - run: sudo cp src/csl.h /usr/include/
+            - run: cmake -S . -B build -G Ninja
+            - run: cmake --build build
+            - name: Test
+              run: ctest --test-dir ./build
