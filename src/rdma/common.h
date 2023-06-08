@@ -13,6 +13,8 @@
 #define CLOSE_FILE  2
 #define EXIT_PROC   3
 #define GET_INFO    4
+#define SYNC_PEER   5
+#define SYNC_PEER_DONE  6
 
 #define MAX_FILE_ID_LENGTH 512
 

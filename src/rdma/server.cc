@@ -235,6 +235,28 @@ int CSLServer::handleClientRequest(int socket) {
             }
             send(it->second.qp->getRemoteSocket(), &resp, sizeof(resp), 0);
             break;
+        case SYNC_PEER:
+            if (it == local_cons.end()) {
+                LOG(ERROR) << "[SYNC PEER] can't find file id: " << file_id;
+                break;
+            }
+            if (req.fi.size != it->second.buffer->getSizeInBytes()) {
+                LOG(WARNING) << "[SYNC PEER] req size not consistent with buf size, req: " << req.fi.size
+                             << ", buf: " << it->second.buffer->getSizeInBytes();
+            }
+            it->second.tmp_buffer = mr_pool->GetMRofSize(it->second.buffer->getSizeInBytes());
+            it->second.tmp_buffer_token.reset(it->second.tmp_buffer->createRegionToken());
+            send(it->second.socket, it->second.tmp_buffer_token.get(), sizeof(RegionToken), 0);
+            break;
+        case SYNC_PEER_DONE:
+            if (it == local_cons.end()) {
+                LOG(ERROR) << "[SYNC PEER DONE] can't find file id: " << file_id;
+                break;
+            }
+            it->second.buffer.swap(it->second.tmp_buffer);
+            it->second.buffer_token.swap(it->second.tmp_buffer_token);
+            mr_pool->RecycleMR(it->second.tmp_buffer);
+            break;
         default:
             LOG(ERROR) << "Unknown request type" << req.type;
             break;

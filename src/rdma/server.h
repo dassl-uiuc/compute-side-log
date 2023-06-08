@@ -26,20 +26,26 @@
 #include "mr_pool.h"
 
 using namespace std;
+using infinity::queues::QueuePair;
+using infinity::memory::Buffer;
+using infinity::memory::RegionToken;
+using infinity::queues::QueuePairFactory;
 
 class CSLServer {
     friend void ServerWatcher(zhandle_t *zh, int type, int state, const char *path, void *watcher_ctx);
     struct LocalConData {
-        shared_ptr<infinity::queues::QueuePair> qp;
-        shared_ptr<infinity::memory::Buffer> buffer;
-        shared_ptr<infinity::memory::RegionToken> buffer_token;
+        shared_ptr<QueuePair> qp;
+        shared_ptr<Buffer> buffer;
+        shared_ptr<RegionToken> buffer_token;
+        shared_ptr<Buffer> tmp_buffer;
+        shared_ptr<RegionToken> tmp_buffer_token;
         int socket;
     };
 
    private:
     infinity::core::Context *context;
-    infinity::queues::QueuePairFactory *qp_factory;
-    unordered_map<int, shared_ptr<infinity::queues::QueuePair> > existing_qps;  // prevent QPs from being automatically freed
+    QueuePairFactory *qp_factory;
+    unordered_map<int, shared_ptr<QueuePair> > existing_qps;  // prevent QPs from being automatically freed
     unique_ptr<NCLMrPool> mr_pool;
     unordered_map<string, LocalConData> local_cons;
     zhandle_t *zh;

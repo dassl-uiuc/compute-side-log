@@ -515,22 +515,48 @@ bool CSLClient::recoverPeer(const string &new_peer) {
     return true;
 }
 
-bool CSLClient::recoverPeers(const vector<string> &new_addrs) {
+bool CSLClient::recoverPeers(const vector<string> &sync_addrs) {
+    // ask peer to prepare a tmp memory region
+    ClientReq peer_sync_req = {
+        .type = SYNC_PEER
+    };
+    peer_sync_req.fi.size = buf_size;
+    const string file_identifier = getFileIdentifier();
+    strcpy(peer_sync_req.fi.file_id, file_identifier.c_str());
+    for (auto &a : sync_addrs) {
+        auto &p = remote_props[a];
+        send(p.socket, &peer_sync_req, sizeof(peer_sync_req), 0);
+    }
+
+    for (auto &a : sync_addrs) {
+        auto &p = remote_props[a];
+        recv(p.socket, p.remote_buffer_token, sizeof(RegionToken), 0);
+    }
+
+    // write to the tmp MR
     vector<shared_ptr<CombinedRequestToken> > tokens;
     uint64_t local_offs[2] = {0, seq_offset};
     uint64_t remote_offs[2] = {0, seq_offset};
     uint32_t sizes[2] = {static_cast<uint32_t>(file_size), sizeof(uint64_t)};  // todo: if size > max_uint32, need multiple writes
 
-    for (auto &p : remote_props) {
-        auto token = make_shared<CombinedRequestToken>(context, p.first);
+    for (auto &a : sync_addrs) {
+        auto &p = remote_props[a];
+        auto token = make_shared<CombinedRequestToken>(context, a);
         tokens.emplace_back(token);
         RequestToken *tokens[2] = {&token->data_token_, &token->seq_token_};
-        p.second.qp->writeTwoPlace(buffer.get(), local_offs, p.second.remote_buffer_token, remote_offs, sizes, tokens);
+        p.qp->writeTwoPlace(buffer.get(), local_offs, p.remote_buffer_token, remote_offs, sizes, tokens);
     }
 
     for (auto token : tokens) {
         token->WaitUntilBothCompleted();
     }
+
+    // ask peer to do an atomic switch from old MR to new MR
+    peer_sync_req.type = SYNC_PEER_DONE;
+    for (auto &a : sync_addrs) {
+        auto &p = remote_props[a];
+        send(p.socket, &peer_sync_req, sizeof(peer_sync_req), 0);
+    } 
 
     return true;
 }
