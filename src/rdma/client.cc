@@ -140,8 +140,10 @@ int CSLClient::getPeersFromZK(set<string> &peer_ips) {
         }
     } else {  // client node exist
         string peers_str(peers_buf, buf_len);
+        int peer_cnt = 0;
         LOG(INFO) << "Reconnect to servers: " << peers_str;
-        return parseIpString(peers_str, peer_ips);
+        tie(ignore, peer_cnt) = parseIpString(peers_str, peer_ips);
+        return peer_cnt;
     }
 }
 
@@ -427,6 +429,7 @@ bool CSLClient::AddPeer(const string &host_addr) {
     RemoteConData prop;  // xxx: I don't know why I made insertion before initialization in commit fbcaa77
     struct FileInfo fi;
     fi.size = buf_size;
+    fi.epoch = duration_cast<microseconds>(system_clock::now().time_since_epoch()).count();
     const string file_identifier = getFileIdentifier();
     strcpy(fi.file_id, file_identifier.c_str());
     prop.qp = qp_pool->GetQpTo(host_addr, &fi);

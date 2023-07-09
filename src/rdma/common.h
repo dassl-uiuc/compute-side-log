@@ -21,6 +21,7 @@
 struct FileInfo {
     size_t size;
     char file_id[MAX_FILE_ID_LENGTH];
+    uint64_t epoch;
 }__attribute__((packed));
 
 struct ClientReq {

@@ -19,6 +19,7 @@ shared_ptr<QueuePair> NCLQpPool::GetQpTo(const string &host_addr, struct FileInf
         struct ClientReq open_req;
         open_req.type = OPEN_FILE;
         open_req.fi.size = fi->size;
+        open_req.fi.epoch = fi->epoch;
         memcpy(open_req.fi.file_id, fi->file_id, MAX_FILE_ID_LENGTH);
         send(qp->getRemoteSocket(), &open_req, sizeof(open_req), 0);
         recv(qp->getRemoteSocket(), qp->getUserData(), sizeof(RegionToken), 0);

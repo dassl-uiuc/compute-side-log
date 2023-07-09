@@ -6,7 +6,11 @@
 TEST(ParseIpStrTest, TestSingleIp) {
     string ipstr = "127.0.0.1";
     set<string> ip;
-    ASSERT_EQ(parseIpString(ipstr, ip), 1);
+    uint64_t ep;
+    int cnt;
+    tie(ep, cnt) = parseIpString(ipstr, ip);
+    ASSERT_EQ(cnt, 1);
+    ASSERT_EQ(ep, 0);
     ASSERT_EQ(ip.size(), 1);
     ASSERT_TRUE(ip.find("127.0.0.1") != ip.end());
 }
@@ -14,7 +18,11 @@ TEST(ParseIpStrTest, TestSingleIp) {
 TEST(ParseIpStrTest, TestMultiIp) {
     string ipstr = "127.0.0.1:127.0.0.2:127.0.0.3";
     set<string> ip;
-    ASSERT_EQ(parseIpString(ipstr, ip), 3);
+    uint64_t ep;
+    int cnt;
+    tie(ep, cnt) = parseIpString(ipstr, ip);
+    ASSERT_EQ(cnt, 3);
+    ASSERT_EQ(ep, 0);
     ASSERT_EQ(ip.size(), 3);
     ASSERT_TRUE(ip.find("127.0.0.1") != ip.end());
     ASSERT_TRUE(ip.find("127.0.0.2") != ip.end());
@@ -24,8 +32,61 @@ TEST(ParseIpStrTest, TestMultiIp) {
 TEST(ParseIpStrTest, TestNoIp) {
     string ipstr = "";
     set<string> ip;
-    ASSERT_EQ(parseIpString(ipstr, ip), 0);
+    uint64_t ep;
+    int cnt;
+    tie(ep, cnt) = parseIpString(ipstr, ip);
+    ASSERT_EQ(cnt, 0);
+    ASSERT_EQ(ep, 0);
     ASSERT_TRUE(ip.empty());
+}
+
+TEST(ParseIpStrTest, TestSingleIpWithEpoch) {
+    string ipstr = "1234567/127.0.0.1";
+    set<string> ip;
+    uint64_t ep;
+    int cnt;
+    tie(ep, cnt) = parseIpString(ipstr, ip);
+    ASSERT_EQ(cnt, 1);
+    ASSERT_EQ(ep, 1234567);
+    ASSERT_EQ(ip.size(), 1);
+    ASSERT_TRUE(ip.find("127.0.0.1") != ip.end());
+}
+
+TEST(ParseIpStrTest, TestMultiIpWithEpoch) {
+    string ipstr = "1234567/127.0.0.1:127.0.0.2:127.0.0.3";
+    set<string> ip;
+    uint64_t ep;
+    int cnt;
+    tie(ep, cnt) = parseIpString(ipstr, ip);
+    ASSERT_EQ(cnt, 3);
+    ASSERT_EQ(ep, 1234567);
+    ASSERT_EQ(ip.size(), 3);
+    ASSERT_TRUE(ip.find("127.0.0.1") != ip.end());
+    ASSERT_TRUE(ip.find("127.0.0.2") != ip.end());
+    ASSERT_TRUE(ip.find("127.0.0.3") != ip.end());
+}
+
+TEST(ParseIpStrTest, TestNoIpWithEpoch) {
+    string ipstr = "1234567/";
+    set<string> ip;
+    uint64_t ep;
+    int cnt;
+    tie(ep, cnt) = parseIpString(ipstr, ip);
+    ASSERT_EQ(cnt, 0);
+    ASSERT_EQ(ep, 1234567);
+    ASSERT_TRUE(ip.empty());
+}
+
+TEST(ParseIpStrTest, TestSingleIpWithNoEpoch) {
+    string ipstr = "/127.0.0.1";
+    set<string> ip;
+    uint64_t ep;
+    int cnt;
+    tie(ep, cnt) = parseIpString(ipstr, ip);
+    ASSERT_EQ(cnt, 1);
+    ASSERT_EQ(ep, 0);
+    ASSERT_EQ(ip.size(), 1);
+    ASSERT_TRUE(ip.find("127.0.0.1") != ip.end());
 }
 
 TEST(FileStringTest, TestGetExt) {

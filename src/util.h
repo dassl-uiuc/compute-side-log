@@ -3,11 +3,15 @@
 #include <string>
 #include <sstream>
 #include <set>
+#include <tuple>
 #include <zookeeper/zookeeper.h>
 
 using std::string;
 using std::stringstream;
 using std::set;
+using std::tuple;
+using std::tie;
+using std::make_tuple;
 
 static const char* state2String(int state){
   if (state == 0)
@@ -48,31 +52,43 @@ static const char* type2String(int type){
 /**
  * Generate ip string concatenated with ":"
  */
-string generateIpString(set<string> &peers) {
+string generateIpString(set<string> &peers, uint64_t epoch=0) {
+  stringstream peers_str;
+  if (epoch != 0)
+    peers_str << epoch << "/";
   if (peers.empty())
-    return "";
+    return peers_str.str();
   auto it = peers.begin();
-  string peers_str = *(it++);
+  peers_str << *(it++);
   for (; it != peers.end(); ++it)
-    peers_str.append(":").append(*it);
-  return peers_str;
+    peers_str << ":" << *it;
+  return peers_str.str();
 }
 
 /**
  * Separate ip string concatenated with ":"
- * @return number of ips parsed
+ * @return epoch and number of ips parsed
  */
-int parseIpString(string &peers_str, set<string> &peers) {
+tuple<uint64_t, int> parseIpString(string &peers_str, set<string> &peers) {
   if (peers_str.empty())
-    return 0;
-  int pos, next_pos = -1, cnt = 0;
+    return make_tuple(0, 0);
+  int pos = 0, next_pos = -1, cnt = 0;
+  uint64_t epoch = 0;
+  // parse epoch number
+  next_pos = peers_str.find('/', pos);
+  if (next_pos != -1 && next_pos != 0) {
+    epoch = stoul(peers_str.substr(pos, next_pos - pos));
+  }
+  // parse peer ips
+  if (next_pos == peers_str.length() - 1)
+    return make_tuple(epoch, 0);
   do {
     pos = next_pos + 1;
     next_pos = peers_str.find(':', pos);
     peers.insert(peers_str.substr(pos, next_pos - pos));
     cnt++;
   } while(next_pos != -1);
-  return cnt;
+  return make_tuple(epoch, cnt);
 }
 
 string getPeerFromPath(const char *path) {

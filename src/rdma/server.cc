@@ -145,6 +145,7 @@ void CSLServer::handleIncomingConnection() {
 
         con.qp = shared_ptr<QueuePair>(
             qp_factory->replyIncomingConnection(socket, recv_buf, con.buffer_token.get(), sizeof(*(con.buffer_token))));
+        con.epoch = fi.epoch;
         existing_qps.insert(make_pair(con.qp->getRemoteSocket(), con.qp));
         local_cons.insert(make_pair(file_id, con));
         // conn_cnt++;

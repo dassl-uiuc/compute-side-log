@@ -39,6 +39,7 @@ class CSLServer {
         shared_ptr<RegionToken> buffer_token;
         shared_ptr<Buffer> tmp_buffer;
         shared_ptr<RegionToken> tmp_buffer_token;
+        uint64_t epoch;
         int socket;
     };
 
