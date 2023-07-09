@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "../csl_config.h"
+
 bool mr_cmp(const shared_ptr<Buffer> &b1, const shared_ptr<Buffer> &b2) {
     if (b1->getSizeInBytes() != b2->getSizeInBytes())
         return b1->getSizeInBytes() < b2->getSizeInBytes();
@@ -9,7 +11,13 @@ bool mr_cmp(const shared_ptr<Buffer> &b1, const shared_ptr<Buffer> &b2) {
         return b1 < b2;
 }
 
-NCLMrPool::NCLMrPool(Context *context) : context(context), free_mrs(mr_cmp) {}
+NCLMrPool::NCLMrPool(Context *context, int pre_allocate) : context(context), free_mrs(mr_cmp) {
+    for (int i = 0; i < pre_allocate; i++) {
+        auto mr = make_shared<Buffer>(context, MR_SIZE);
+        mr->zero();
+        free_mrs.emplace(mr);
+    }
+}
 
 shared_ptr<Buffer> NCLMrPool::GetMRofSize(size_t size) {
     lock_guard<mutex> guard(lock);

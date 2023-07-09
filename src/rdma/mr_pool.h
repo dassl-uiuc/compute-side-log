@@ -20,7 +20,7 @@ class NCLMrPool {
     mutex lock;
 
    public:
-    NCLMrPool(Context *context);
+    NCLMrPool(Context *context, int pre_allocate=0);
 
     /**
      * Get a MR of particular size. If free mr of satisfied size is available, get the mr.
