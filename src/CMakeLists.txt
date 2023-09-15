@@ -21,8 +21,8 @@ target_link_libraries(nclstat
     PRIVATE hdr_histogram_static
     ${CMAKE_DL_LIBS})
 
-add_executable(server server.cpp)
-add_executable(client client.cpp)
+add_executable(server server.cpp properties.cc)
+add_executable(client client.cpp properties.cc)
 add_executable(posix_client posix_client.cpp)
 
 include_directories(${CMAKE_SOURCE_DIR}/RDMA/release/include)
