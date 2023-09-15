@@ -21,7 +21,8 @@ using infinity::queues::QueuePairFactory;
 using namespace std::chrono;
 
 CSLServer::CSLServer(uint16_t port, size_t buf_size, string mgr_hosts) : stop(false) {
-    context = new infinity::core::Context(infinity::core::Configuration::DEFAULT_IB_DEVICE, 1);
+    context = new infinity::core::Context(infinity::core::Configuration::DEFAULT_IB_DEVICE,
+                                          infinity::core::Configuration::DEFAULT_IB_PHY_PORT);
     qp_factory = new QueuePairFactory(context);
     mr_pool = make_unique<NCLMrPool>(context);
     int ret;

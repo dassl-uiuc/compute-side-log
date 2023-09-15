@@ -12,7 +12,8 @@
 using namespace std;
 
 CSLClientPool::CSLClientPool(string mgr_hosts) : global_id(0), mgr_hosts(mgr_hosts) {
-    context = new infinity::core::Context(infinity::core::Configuration::DEFAULT_IB_DEVICE, 1);
+    context = new infinity::core::Context(infinity::core::Configuration::DEFAULT_IB_DEVICE,
+                                          infinity::core::Configuration::DEFAULT_IB_PHY_PORT);
     qp_pool = make_shared<NCLQpPool>(context, PORT);
     mr_pool = make_shared<NCLMrPool>(context);
 }

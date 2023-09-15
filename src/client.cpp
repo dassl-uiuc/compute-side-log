@@ -6,9 +6,12 @@
 #include <iostream>
 
 #include "csl_config.h"
+#include "properties.h"
 
-int main() {
-    infinity::core::Context *context = new infinity::core::Context(infinity::core::Configuration::DEFAULT_IB_DEVICE, 1);
+int main(int argc, const char *argv[]) {
+    Properties prop;
+    infinity::core::Context *context = new infinity::core::Context(infinity::core::Configuration::DEFAULT_IB_DEVICE,
+                                                                   infinity::core::Configuration::DEFAULT_IB_PHY_PORT);
     auto qp_pool = std::make_shared<NCLQpPool>(context, PORT);
     auto mr_pool = std::make_shared<NCLMrPool>(context);
     // CSLClient client1({"127.0.0.1"}, PORT, 1024, 0, "file1");

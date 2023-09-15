@@ -38,4 +38,4 @@ target_link_libraries(csl
 
 target_link_libraries(server csl)
 target_link_libraries(client csl)
-target_link_libraries(posix_client nclstat)
+target_link_libraries(posix_client csl)
