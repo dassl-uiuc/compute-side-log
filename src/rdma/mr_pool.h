@@ -20,7 +20,13 @@ class NCLMrPool {
     mutex lock;
 
    public:
-    NCLMrPool(Context *context, int pre_allocate=0);
+    /**
+     * Construct a MR pool
+     * 
+     * @param pre_allocate number of MR to pre-allocate. This will save time in creating MR when client request to
+     * replicate a new file
+     */
+    NCLMrPool(Context *context, int pre_allocate = 0);
 
     /**
      * Get a MR of particular size. If free mr of satisfied size is available, get the mr.

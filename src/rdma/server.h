@@ -26,9 +26,9 @@
 #include "mr_pool.h"
 
 using namespace std;
-using infinity::queues::QueuePair;
 using infinity::memory::Buffer;
 using infinity::memory::RegionToken;
+using infinity::queues::QueuePair;
 using infinity::queues::QueuePairFactory;
 
 class CSLServer {
@@ -56,22 +56,45 @@ class CSLServer {
     bool stop;
 
    public:
-    CSLServer(uint16_t port, size_t buf_size, string mgr_hosts="");
+    CSLServer(uint16_t port, size_t buf_size, string mgr_hosts = "");
     ~CSLServer();
 
     void Run();
+
+    /**
+     * Get the total number of RDMA connections to this server
+     */
     int GetConnectionCount() { return local_cons.size(); }
+
+    /**
+     * Get the file ids of all the files this server is currently backing up
+     */
     vector<string> GetAllFileId();
-    void *GetBufData(const string &fileid) { return local_cons[fileid].buffer->getData(); }
+
+    /**
+     * Get the pointer to the MR for the specified file
+     */
+    const void *GetBufData(const string &fileid) { return local_cons[fileid].buffer->getData(); }
+
+    /**
+     * Get the current sequence number for the specified file
+     */
     uint64_t ReadSeqNum(const string &fileid);
     void Stop() { stop = true; }
+    // Not used currently
     void Preload(ifstream &file);
 
    private:
+    /**
+     * Get the current memory usage (the byte in use, not total size of the MR) in Byte of the specified file
+     */
     size_t findSize(const string &file_id);
     void handleIncomingConnection();
     int handleClientRequest(int socket);
 
+    /**
+     * Called when client closed a file and close the RDMA connection
+     */
     void finalizeConData(struct LocalConData &con);
 };
 

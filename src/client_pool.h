@@ -38,8 +38,17 @@ class CSLClientPool {
    public:
     CSLClientPool(string mgr_hosts = ZK_DEFAULT_HOST);
 
+    // Deprecated
     shared_ptr<CSLClient> GetClient(set<string> host_address, size_t buf_size, const char *filename = "");
 
+    /**
+     * Get a client used for file replication
+     * 
+     * @param buf_size size of memory required to back up this file
+     * @param filename name of the file
+     * @param try_recover if true, the client will try to consult the peers to see if the file has been replicated there
+     * and can be recovered. if false, the file will be initialized as empty
+    */
     shared_ptr<CSLClient> GetClient(size_t buf_size, const char *filename, bool try_recover=false);
 
     void RecycleClient(uint32_t client_id);

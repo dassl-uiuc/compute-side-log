@@ -31,7 +31,7 @@ int main(int argc, char *argv[]) {
         vector<string> all_files = server.GetAllFileId();
         for (auto &f : all_files) {
             cout << "file " << f << ", sequence: " << server.ReadSeqNum(f) << endl;
-            char *buf = (char *)server.GetBufData(f);
+            const char *buf = (const char *)server.GetBufData(f);
             for (int j = 0; j < 128; j++) cout << buf[j];
             cout << endl;
         }
