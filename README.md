@@ -7,12 +7,17 @@ cd compute-side-log
 ```
 
 ## Install Dep
+
 Install submodules and dependencies
 ```bash
 git submodule init
 git submodule update
 ./install-deps.sh
 ```
+
+For Mellanox NIC, use `RDMA/install.sh` to install RDMA driver. You may change the exact version of MLNX_OFED to match your own operating system. See https://network.nvidia.com/products/infiniband-drivers/linux/mlnx_ofed/ for detail.
+
+For other RDMA NIC, please refer to vendor for installation instructions.
 
 Install zookeeper server
 ```bash
@@ -61,7 +66,7 @@ const size_t MR_SIZE = 1024 * 1024 * 100;
 ## Build
 ```bash
 cd compute-side-log
-sudo cp src/csl.h /usr/include
+sudo cp src/csl.h /usr/include  # NCL header file
 cmake -S . -B build
 cmake --build build
 ```
@@ -75,3 +80,19 @@ cmake --build build
 ```
 The server process prints the first 128 bytes of each memory region every second. You should see it print 128 *s in this test.
 Press Ctrl+C to exit the server process.
+
+## General Usage
+To make a file backed by NCL, just add the NCL flag `O_CSL` when creating the file.
+```c
+#include <csl.h>
+
+int fd = open("test.txt", O_RDWR | O_CREAT | O_CSL, 0644);
+```
+The file should not have content in it. Currently NCL does not support backing a file that has existed content.
+
+Developer should ensure that the file size will not exceed the configured `MR_SIZE`. Typically, write-ahead-log files are small and have a configurable size limit.
+
+Then preload the NCL library when running the process (assume NCL servers are already running on replication peers).
+```bash
+LD_PRELOAD=${PATH_TO_LIB}/libcsl.so ./app
+```
