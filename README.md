@@ -1,6 +1,6 @@
 # Near-Compute-Log (compute-side-log)
 
-## Get
+## Download
 ```bash
 git clone https://github.com/dassl-uiuc/compute-side-log.git --recurse-submodules
 cd compute-side-log
@@ -8,18 +8,20 @@ cd compute-side-log
 
 ## Install Dep
 
-Install submodules and dependencies
+### Install submodules and dependencies
 ```bash
 git submodule init
 git submodule update
 ./install-deps.sh
 ```
 
+### Install RDMA Driver
 For Mellanox NIC, use `RDMA/install.sh` to install RDMA driver. You may change the exact version of MLNX_OFED to match your own operating system. See https://network.nvidia.com/products/infiniband-drivers/linux/mlnx_ofed/ for detail.
 
 For other RDMA NIC, please refer to vendor for installation instructions.
 
-Install zookeeper server
+### Install zookeeper server
+Zookeeper can be installed on any server that is accessible to all client and servers.
 ```bash
 cd ..
 wget https://archive.apache.org/dist/zookeeper/zookeeper-3.6.3/apache-zookeeper-3.6.3-bin.tar.gz
@@ -67,18 +69,21 @@ const size_t MR_SIZE = 1024 * 1024 * 100;
 ```bash
 cd compute-side-log
 sudo cp src/csl.h /usr/include  # NCL header file
-cmake -S . -B build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
 ## Run test
+Download, install deps, configure, and build NCL on all client and servers. You may also only build it on one machine, and mount the src code folder to all other machines via NFS. But zookeeper client library need to be installed on all machines (after mounting, simply `cd zookeeper/zookeeper-client/zookeeper-client-c && sudo make install`).
 ```bash
-# start server
+# start server process on every server machine. The number of server machines needed is specified in DEFAULT_REP_FACTOR in csl_config.h
 ./build/src/server
 # start client
 ./build/src/posix_client
 ```
-The server process prints the first 128 bytes of each memory region every second. You should see it print 128 *s in this test.
+What the posix client does is to keep writing a fixed value (42 here) until the memory region is filled up.
+
+The server process prints the first 128 bytes of each memory region every second. You should see it prints 128 '*' (ASCII code 42) in this test.
 Press Ctrl+C to exit the server process.
 
 ## General Usage
