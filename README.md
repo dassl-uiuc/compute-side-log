@@ -13,6 +13,7 @@ cd compute-side-log
 git submodule init
 git submodule update
 ./install-deps.sh
+sudo ldconfig
 ```
 
 ### Install RDMA Driver
@@ -21,8 +22,11 @@ For Mellanox NIC, use `RDMA/install.sh` to install RDMA driver. You may change t
 For other RDMA NIC, please refer to vendor for installation instructions.
 
 ### Install zookeeper server
-Zookeeper can be installed on any server that is accessible to all client and servers.
+Zookeeper can be installed on any server that is accessible to all client and servers. You may install it on the client machine for convenience.
 ```bash
+# install jvm if you haven't
+sudo apt install -y openjdk-11-jre-headless
+# Download zookeeper binary
 cd ..
 wget https://archive.apache.org/dist/zookeeper/zookeeper-3.6.3/apache-zookeeper-3.6.3-bin.tar.gz
 tar -zxvf apache-zookeeper-3.6.3-bin.tar.gz
@@ -60,7 +64,7 @@ Edit `src/csl-config.h`
 const std::string ZK_DEFAULT_HOST = "127.0.0.1:2181";
 // line 10: edit this to be the number of replicas
 const int DEFAULT_REP_FACTOR = 1;
-// line 11: edit this to be the size (in bytes) of memory region to be registered on each replica
+// line 11: edit this to be the size (in bytes) of memory region to be registered for each file on each replica
 const size_t MR_SIZE = 1024 * 1024 * 100;
 
 ```
@@ -68,13 +72,20 @@ const size_t MR_SIZE = 1024 * 1024 * 100;
 ## Build
 ```bash
 cd compute-side-log
-sudo cp src/csl.h /usr/include  # NCL header file
+sudo cp src/csl.h /usr/include  # install NCL header file
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
 
 ## Run test
-Download, install deps, configure, and build NCL on all client and servers. You may also only build it on one machine, and mount the src code folder to all other machines via NFS. But zookeeper client library need to be installed on all machines (after mounting, simply `cd zookeeper/zookeeper-client/zookeeper-client-c && sudo make install`).
+First, download, install deps, configure, and build NCL on all client and servers. You may also only build it on one machine, and mount the src code folder to all other machines via NFS. But zookeeper client library and gflags need to be installed on all machines
+```bash
+# after mounting 
+cd ${NCL_DIR}/zookeeper/zookeeper-client/zookeeper-client-c && sudo make install
+sudo apt install -y libgflags-dev
+sudo ldconfig
+```
+First start server process on every server machine, then run client process.
 ```bash
 # start server process on every server machine. The number of server machines needed is specified in DEFAULT_REP_FACTOR in csl_config.h
 ./build/src/server
