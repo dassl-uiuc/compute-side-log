@@ -18,9 +18,7 @@
 #include "../util.h"
 #include "common.h"
 
-#define FORCE_REMOTE_READ   0
 #define USE_QUORUM_WRITE    1
-#define LATENCY             1
 
 using infinity::queues::QueuePairFactory;
 using namespace std::chrono;
@@ -63,18 +61,18 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
         return;
     }
 
-#if LATENCY
+#ifdef LATENCY
     auto start = high_resolution_clock::now();
 #endif
 
     set<string> host_addresses;
     n_peers = getPeersFromZK(host_addresses);  // check if client node has been created before
-#if LATENCY
+#ifdef LATENCY
     auto after_get_peer = high_resolution_clock::now();
 #endif
 
     init(host_addresses);
-#if LATENCY
+#ifdef LATENCY
     auto after_connect = high_resolution_clock::now();
 #endif
 
@@ -83,7 +81,7 @@ CSLClient::CSLClient(shared_ptr<NCLQpPool> qp_pool, shared_ptr<NCLMrPool> mr_poo
     } else if (try_recover){
         TryRecover();
     }
-#if LATENCY
+#ifdef LATENCY
     auto after_recover = high_resolution_clock::now();
     printf("get peer %ld\nconnect %ld\nrecover %ld\n", duration_cast<microseconds>(after_get_peer - start).count(),
            duration_cast<microseconds>(after_connect - after_get_peer).count(),
@@ -345,7 +343,7 @@ ssize_t CSLClient::WritePos(const void *buf, size_t size, off_t pos) {
 ssize_t CSLClient::Read(void *buf, size_t size) {
     size = min(size, file_size - buf_offset);
     size_t cur_off = buf_offset.fetch_add(size);
-#if FORCE_REMOTE_READ
+#ifdef FORCE_REMOTE_READ
     ReadSync(cur_off, cur_off, size);
 #endif
     memcpy(buf, (char *)buffer->getAddress() + cur_off, size);
@@ -354,7 +352,7 @@ ssize_t CSLClient::Read(void *buf, size_t size) {
 
 ssize_t CSLClient::ReadPos(void *buf, size_t size, off_t pos) {
     size = min(size, file_size - pos);
-#if FORCE_REMOTE_READ
+#ifdef FORCE_REMOTE_READ
     ReadSync(pos, pos, size);
 #endif
     memcpy(buf, (char *)buffer->getAddress() + pos, size);
@@ -493,7 +491,7 @@ string CSLClient::replacePeer(string &old_addr) {
         return "";
     }
 
-#if LATENCY
+#ifdef LATENCY
     after_get_peer = high_resolution_clock::now();
 #endif
 
@@ -661,12 +659,12 @@ void CSLClient::TryRecover() {
         LOG(INFO) << "recover " << recover_size << "B for " << filename << " from " << recover_src;
         recoverFromSrc(recover_src, recover_size);
     }
-#if LATENCY
+#ifdef LATENCY
     auto before_sync = high_resolution_clock::now();
 #endif
     syncPeerAfterRecover(recover_src);
 
-#if LATENCY
+#ifdef LATENCY
     auto after_sync = high_resolution_clock::now();
     printf("sync peers: %ld us\n", duration_cast<microseconds>(after_sync - before_sync).count());
 #endif
@@ -707,17 +705,17 @@ void ClientWatcher(zhandle_t *zh, int type, int state, const char *path, void *w
                 cli->watchForPeerJoin();
                 return;
             }
-#if LATENCY
+#ifdef LATENCY
             const auto after_connect = high_resolution_clock::now();
 #endif
             cli->recoverPeer(new_peer);
-#if LATENCY
+#ifdef LATENCY
             const auto after_update = high_resolution_clock::now();
 #endif
             cli->updateClientZKNode();
 
             const auto end = high_resolution_clock::now();
-#if LATENCY
+#ifdef LATENCY
             printf("recover peer:\nget peer: %ld us\nconnect: %ld us\nrecover: %ld us\nupdate: %ld us\n",
                    duration_cast<microseconds>(after_get_peer - start).count(),
                    duration_cast<microseconds>(after_connect - after_get_peer).count(),

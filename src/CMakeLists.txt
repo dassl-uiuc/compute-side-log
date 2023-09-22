@@ -6,6 +6,16 @@ set(SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/rdma/qp_pool.cc
     ${CMAKE_CURRENT_SOURCE_DIR}/rdma/mr_pool.cc)
 
+
+option(LATENCY "show latency of difference phase" ON)
+option(REMOTE_READ "force read from remote peer" OFF)
+if (LATENCY)
+    add_compile_definitions(LATENCY)
+endif()
+if (REMOTE_READ)
+    add_compile_definitions(FORCE_REMOTE_READ)
+endif()
+
 add_library(csl SHARED
     csl.h
     ${SRC_FILES})
