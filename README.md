@@ -90,7 +90,7 @@ First start server process on every server machine, then run client process.
 # start server process on every server machine. The number of server machines needed is specified in DEFAULT_REP_FACTOR in csl_config.h
 ./build/src/server
 # start client
-./build/src/posix_client
+./build/src/posix_client 128 w ./test.txt ncl
 ```
 What the posix client does is to keep writing a fixed value (42 here) until the memory region is filled up.
 
