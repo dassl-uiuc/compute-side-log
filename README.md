@@ -1,5 +1,21 @@
 # Near-Compute-Log (compute-side-log)
 
+## Organization
+This repo is organized as follow:
+```
+Near-Compute-Log/
+├─ RDMA/ (a C++ RDMA library)
+├─ src/ (source code for NCL)
+│  ├─ rdma/ (rdma related code)
+│  ├─ csl.cc (top level code for NCL library)
+│  ├─ csl_config.h (configurations)
+│  ├─ server.cpp (NCL replication peer code)
+│  ├─ client.cpp (an example client that uses NCL internal api)
+│  ├─ posix_client.cpp (an example client that uses POSIX api)
+│  ├─ ...
+├─ tst/ (some test code)
+```
+
 ## Download
 ```bash
 git clone https://github.com/dassl-uiuc/compute-side-log.git --recurse-submodules
@@ -76,6 +92,11 @@ sudo cp src/csl.h /usr/include  # install NCL header file
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ```
+The binaries will be in `./build/src/`, which contains:
+- `libcsl.so`: The NCL library
+- `server`: The NCL replication peer
+- `posix_client`: The example POSIX client
+
 
 ## Run test
 First, download, install deps, configure, and build NCL on all client and servers. You may also only build it on one machine, and mount the src code folder to all other machines via NFS. But zookeeper client library and gflags need to be installed on all machines
@@ -112,3 +133,9 @@ Then preload the NCL library when running the process (assume NCL servers are al
 ```bash
 LD_PRELOAD=${PATH_TO_LIB}/libcsl.so ./app
 ```
+
+## Support Platform
+Near-Compute-Log is tested on the following platform:
+- OS: Ubuntu 20.04 LTS
+- NIC: Mellanox MT27710 Family ConnectX-4 Lx (25Gb RoCE)
+- RDMA Driver: MLNX_OFED-5.4-3.6.8.1
