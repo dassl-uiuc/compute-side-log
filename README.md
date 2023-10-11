@@ -53,7 +53,7 @@ Edit zookeeper config
 cd conf
 cp zoo_sample.cfg zoo.cfg
 # Edit line 12 of zoo.cfg to
-# dataDir=./zookeeper
+# dataDir=${PATH_TO_ZOOKEEPER_FOLDER}/zookeeper
 cd ..
 ```
 Start zookeeper
