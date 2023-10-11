@@ -16,7 +16,6 @@ jobs:
               uses: actions/checkout@v3
               with:
                 submodules: recursive
-                ssh-key: ${{ secrets.ACCESS_SSH_KEY }}
             - name: Install deps
               run: ./install-deps.sh
             - run: sudo apt install libibverbs-dev ninja-build -y
