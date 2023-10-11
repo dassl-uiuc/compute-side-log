@@ -517,6 +517,7 @@ bool CSLClient::recoverPeer(const string &new_peer) {
 }
 
 bool CSLClient::recoverPeers(const vector<string> &sync_addrs) {
+    /*
     // ask peer to prepare a tmp memory region
     ClientReq peer_sync_req = {
         .type = SYNC_PEER
@@ -533,6 +534,7 @@ bool CSLClient::recoverPeers(const vector<string> &sync_addrs) {
         auto &p = remote_props[a];
         recv(p.socket, p.remote_buffer_token, sizeof(RegionToken), 0);
     }
+    */
 
     // write to the tmp MR
     vector<shared_ptr<CombinedRequestToken> > tokens;
@@ -552,12 +554,14 @@ bool CSLClient::recoverPeers(const vector<string> &sync_addrs) {
         token->WaitUntilBothCompleted();
     }
 
+    /*
     // ask peer to do an atomic switch from old MR to new MR
     peer_sync_req.type = SYNC_PEER_DONE;
     for (auto &a : sync_addrs) {
         auto &p = remote_props[a];
         send(p.socket, &peer_sync_req, sizeof(peer_sync_req), 0);
-    } 
+    }
+    */
 
     return true;
 }
