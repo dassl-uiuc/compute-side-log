@@ -1,5 +1,15 @@
 # Near-Compute-Log (compute-side-log)
 
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+
+## Publication
+This repo is the artifact of:
+
+> [Xuhao Luo, Ramnatthan Alagappan, and Aishwarya Ganesan.
+**SplitFT: Fault Tolerance for Disaggregated Datacenters via Remote
+Memory Logging.** In *European Conference on Computer Systems
+(EuroSys ’24), April 22–25, 2024, Athens, Greece.*](https://doi.org/10.1145/3627703.3629561)
+
 ## Organization
 This repo is organized as follow:
 ```
