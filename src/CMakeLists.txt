@@ -7,7 +7,7 @@ set(SRC_FILES
     ${CMAKE_CURRENT_SOURCE_DIR}/rdma/mr_pool.cc)
 
 
-option(LATENCY "show latency of difference phase" ON)
+option(LATENCY "show latency of different phase" ON)
 option(REMOTE_READ "force read from remote peer" OFF)
 if (LATENCY)
     add_compile_definitions(LATENCY)

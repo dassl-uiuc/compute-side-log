@@ -74,7 +74,8 @@ cd ../compute-side-log
 
 ## Configure
 ### Config RDMA library
-Edit `RDMA/src/infinity/core/Configuration.h`
+The RDMA configuration is automatically generated at compile time. In case you need to edit it,
+edit `RDMA/src/infinity/core/Configuration.h`
 ```c++
 // line 47: edit this to be the device name of your RNIC (can be obtained from `ifconfig`)
 static constexpr const char* DEFAULT_NET_DEVICE = "enp0s31f6";
